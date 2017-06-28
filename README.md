@@ -168,44 +168,45 @@ julia> const binary = "
        }
        ";
 
-julia> binary_class_stan = Stanmodel(Sample(;num_samples=20_000), name = "Binary", model = binary, monitors = ["tau", "theta_minus", "theta_plus"]);
+julia> binary_class_stan = Stanmodel(Sample(), name = "Binary", model = binary, monitors = ["tau", "theta_minus", "theta_plus"]);
 julia> stan_res = stan(binary_class_stan, [Stan_data])
 ...snip...
-Warmup took (0.11, 0.12, 0.12, 0.14) seconds, 0.49 seconds total
-Sampling took (1.8, 1.9, 2.1, 2.1) seconds, 8.0 seconds total
+Warmup took (0.11, 0.13, 0.12, 0.11) seconds, 0.48 seconds total
+Sampling took (0.11, 0.11, 0.092, 0.099) seconds, 0.41 seconds total
+
                  Mean     MCSE  StdDev     5%    50%    95%  N_Eff  N_Eff/s    R_hat
-lp__             -126  6.6e-03     1.2   -129   -126   -125  35814     4486  1.0e+00
-accept_stat__    0.85  5.4e-04    0.15   0.54   0.90    1.0  80000    10021  1.0e+00
-stepsize__        1.1  5.0e-02   0.071    1.1    1.2    1.2    2.0     0.25  4.1e+12
-treedepth__       1.9  1.3e-03    0.35    1.0    2.0    2.0  74060     9276  1.0e+00
-n_leapfrog__      2.8  2.0e-03    0.54    1.0    3.0    3.0  70154     8787  1.0e+00
-divergent__      0.00  0.0e+00    0.00   0.00   0.00   0.00  80000    10021     -nan
-energy__          128  9.3e-03     1.7    126    128    131  35031     4388  1.0e+00
-tau              0.55  2.7e-04   0.078   0.42   0.55   0.68  80000    10021  1.0e+00
-theta_minus     0.053  5.8e-05   0.016  0.029  0.051  0.082  80000    10021  1.0e+00
-theta_plus       0.12  9.3e-05   0.026  0.081   0.12   0.17  80000    10021  1.0e+00
-OmTau            0.45  2.7e-04   0.078   0.32   0.45   0.58  80000    10021  1.0e+00
-OmTm             0.95  5.8e-05   0.016   0.92   0.95   0.97  80000    10021  1.0e+00
-OmTp             0.88  9.3e-05   0.026   0.83   0.88   0.92  80000    10021  1.0e+00
+lp__             -126  2.9e-02     1.2   -129   -126   -125   1835     4515  1.0e+00
+accept_stat__    0.86  2.3e-03    0.14   0.56   0.91    1.0   4000     9845  1.0e+00
+stepsize__        1.1  6.0e-02   0.085    1.0    1.2    1.3    2.0      4.9  4.3e+13
+treedepth__       1.9  5.8e-03    0.34    1.0    2.0    2.0   3541     8716  1.0e+00
+n_leapfrog__      2.9  9.5e-03    0.58    1.0    3.0    3.0   3796     9342  1.0e+00
+divergent__      0.00  0.0e+00    0.00   0.00   0.00   0.00   4000     9845     -nan
+energy__          128  4.0e-02     1.7    126    127    131   1810     4455  1.0e+00
+tau              0.55  1.2e-03   0.077   0.42   0.55   0.68   4000     9845  1.0e+00
+theta_minus     0.052  2.6e-04   0.016  0.028  0.050  0.082   4000     9845  1.0e+00
+theta_plus       0.12  4.1e-04   0.026  0.082   0.12   0.17   4000     9845  1.0e+00
+OmTau            0.45  1.2e-03   0.077   0.32   0.45   0.58   4000     9845  1.0e+00
+OmTm             0.95  2.6e-04   0.016   0.92   0.95   0.97   4000     9845  1.0e+00
+OmTp             0.88  4.1e-04   0.026   0.83   0.88   0.92   4000     9845  1.0e+00
 
 
 julia> describe(stan_res[2])
-Iterations = 1:20000
+Iterations = 1:1000
 Thinning interval = 1
 Chains = 1,2,3,4
-Samples per chain = 20000
+Samples per chain = 1000
 
 Empirical Posterior Estimates:
-                Mean         SD        Naive SE         MCSE      ESS 
-        tau 0.550564115 0.077717459 0.000274772712 0.00022319373 80000
-theta_minus 0.052597916 0.016446341 0.000058146595 0.00004626847 80000
- theta_plus 0.121378680 0.026420304 0.000093409879 0.00007710390 80000
+                Mean         SD        Naive SE        MCSE      ESS
+        tau 0.550815186 0.077343408 0.00122290665 0.00110432852 4000
+theta_minus 0.052320052 0.016412226 0.00025950008 0.00020854788 4000
+ theta_plus 0.121547492 0.025631407 0.00040526812 0.00034733095 4000
 
 Quantiles:
-               2.5%       25.0%     50.0%      75.0%      97.5%  
-        tau 0.39682783 0.49776500 0.5513410 0.60420725 0.69973317
-theta_minus 0.02556276 0.04081895 0.0508272 0.06257235 0.08945050
- theta_plus 0.07443969 0.10267175 0.1197155 0.13829550 0.17724537
+                2.5%       25.0%     50.0%      75.0%      97.5%  
+        tau 0.398738025 0.49840800 0.5518635 0.60470475 0.69873750
+theta_minus 0.025102625 0.04061495 0.0504063 0.06183745 0.08850898
+ theta_plus 0.075059647 0.10359050 0.1199970 0.13848575 0.17445715
 ```
 
 Note that total CPU time was just under 8.5 seconds. For comparison,
