@@ -209,7 +209,7 @@ theta_minus 0.025102625 0.04061495 0.0504063 0.06183745 0.08850898
  theta_plus 0.075059647 0.10359050 0.1199970 0.13848575 0.17445715
 ```
 
-Note that total CPU time was just under 8.5 seconds. For comparison,
+Note that total CPU time was just under a second. For comparison,
 ```
 julia> function run_bc_model()
          jp = JointPosterior(bc_model, data)
@@ -236,4 +236,4 @@ BenchmarkTools.Trial:
 
 ```
 
-That is about 8.5 seconds for MCMC vs 15 milliseconds, an advantage of over 500 fold.
+That is about 0.89 seconds for MCMC vs 15 milliseconds, an advantage of around 60-fold using the default number of iterations (1,000 posterior samples for each of 4 chains).
