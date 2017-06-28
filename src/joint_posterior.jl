@@ -62,8 +62,3 @@ function JointPosterior{p, q <: QuadratureRule, P <: parameters}( M::Model{p, q,
   JointPosterior{p, q, P}(M, weights_positive, weights_negative, Θ_hat, L)
 
 end
-
-function Base.show(io, jp::JointPosterior)
-  jp.M.Θ.x .= jp.Θ_hat
-  print(jp.M.Θ)
-end
