@@ -6,8 +6,7 @@
 
 [![codecov.io](http://codecov.io/github/chriselrod/JointPosteriors.jl/coverage.svg?branch=master)](http://codecov.io/github/chriselrod/JointPosteriors.jl?branch=master)
 
-
-
+## Introduction
 
 This package implements sparse grid quadrature. I'm working on documentation, organization, tests, and adding more features. And then on getting this package registered. Until then, you can still install via
 ```
@@ -16,6 +15,7 @@ julia> Pkg.clone("https://github.com/chriselrod/LogDensities.jl")
 julia> Pkg.clone("https://github.com/chriselrod/JointPosteriors.jl")
 ```
 
+#### Example 1: Binary Classification
 
 As an example, consider the model from:
 > Beavers, D. P., Stamey, J. D., & Bekele, B. N. (2011). A Bayesian model to assess a binary measurement system when no gold standard system is available. Journal of Quality Technology, 43(1), 16.
@@ -35,7 +35,7 @@ Currently, when defining parameter structures, the first field must always be `x
 
 That is all we need to initialize our model:
 ```
-julia> bc_model = Model(BinaryClassification, 6);
+julia> bc_model = Model(BinaryClassification);
 ```
 
 But before we really do anything with it, we need data nad a log likelihood function. We have a lot of freedom to write these parts however we'd like.
@@ -126,7 +126,7 @@ Marginal parameter
 σ: 0.025674446894039842
 Quantiles: [0.0713712 0.0951648 0.112278 0.13201 0.170533]
 ```
-
+###### Comparison with Stan
 
 You can compare these results with that from MCMC. For example, using Stan
 ```
@@ -235,5 +235,147 @@ BenchmarkTools.Trial:
   evals/sample:     1
 
 ```
+That is about 0.89 seconds for MCMC vs 15 milliseconds, about 60-fold faster using the default number of iterations (1,000 posterior samples for each of 4 chains).
 
-That is about 0.89 seconds for MCMC vs 15 milliseconds, an advantage of around 60-fold using the default number of iterations (1,000 posterior samples for each of 4 chains).
+#### Example 2: Hello World, Linear Regression!
+
+Bob Carpenter [compared how](http://andrewgelman.com/2017/05/31/compare-stan-pymc3-edward-hello-world/) you implement linear regression in Stan, PyMC3, and Edward. 
+To specify the model here, we just need:
+```
+julia> struct HiWorld{T} <: parameters{T,1}
+         x::Vector{T}
+         β::RealVector{3,T}
+         σ::PositiveVector{1,T}
+       end
+
+julia> struct HiWorldData <: Data
+         X::Array{Float64,2}
+         y::Vector{Float64}
+       end
+
+julia> function log_density(Θ::HiWorld, data::Data)
+         lpdf_normal(Θ.β, 0, 10) + lpdf_normal(Θ.σ[1], 0, 1) + lpdf_normal(data.y, data.X * Θ.β, Θ.σ[1])
+       end
+```
+
+We can create our own dataset like that from the PyMC3 example.
+```
+julia> # True parameter values
+       sigma = 1;
+
+julia> beta = [1, 1, 2.5];
+
+julia> # Size of dataset
+       size = 100;
+
+julia> # Predictor variable
+       X = hcat(ones(size), randn(size,2));
+
+julia> X[:,3] .*= 0.2;
+
+julia> # Simulate outcome variable
+       y = X*beta .+ randn(size) .* sigma;
+```
+
+Running the model:
+```
+julia> HW_data = HiWorldData(X, y);
+
+julia> HW_model = Model(HiWorld);
+
+julia> hw_jp = JointPosterior(HW_model, HW_data);
+
+julia> marginal(hw_jp, x -> x.β[1])
+Marginal parameter
+μ: 0.8244634737023615
+σ: 0.0986592330501434
+Quantiles: [0.628894 0.690754 0.743527 0.743527 0.743527]
+
+
+julia> marginal(hw_jp, x -> x.β[2])
+Marginal parameter
+μ: 0.8986692287796316
+σ: 0.09196302695208347
+Quantiles: [0.716489 0.823657 0.887789 0.89865 1.07577]
+
+
+julia> marginal(hw_jp, x -> x.β[3])
+Marginal parameter
+μ: 2.8062485454846993
+σ: 0.48421154364155206
+Quantiles: [1.84043 2.43793 2.74962 3.16046 3.77357]
+
+
+julia> marginal(hw_jp, x -> x.σ[1])
+Marginal parameter
+μ: 0.9563012862670179
+σ: 0.07002800461069793
+Quantiles: [0.834308 0.909538 0.959722 0.994694 1.08448]
+```
+
+To again compare with Stan:
+```
+const hw_stan = "data {
+  int N;
+  vector[N] y;
+  matrix[N, 2] x;
+}
+parameters {
+  real alpha;
+  vector[2] beta;
+  real<lower=0> sigma;
+}
+model {
+  alpha ~ normal(0, 10);
+  beta ~ normal(0, 10);
+  sigma ~ normal(0, 1);
+  y ~ normal(alpha + x * beta, sigma);
+}"
+
+hw_stan_data = Dict("N" => length(y), "x" => X[:,2:3], "y" => y)
+hw_stan_model = Stanmodel(Sample(), name = "HelloWorld", model = hw_stan, monitors = ["alpha", "beta.1", "beta.2", "sigma"]);
+hw_stan_res = stan(hw_stan_model, [hw_stan_data])
+
+
+Warmup took (0.064, 0.050, 0.063, 0.054) seconds, 0.23 seconds total
+Sampling took (0.054, 0.043, 0.057, 0.045) seconds, 0.20 seconds total
+
+                Mean     MCSE  StdDev    5%   50%   95%  N_Eff  N_Eff/s    R_hat
+lp__             -46  3.2e-02     1.4   -49   -45   -44   1994     9978  1.0e+00
+accept_stat__   0.86  2.2e-03    0.14  0.59  0.90   1.0   4000    20015  1.0e+00
+stepsize__       1.0  2.9e-02   0.041  0.97   1.0   1.1    2.0       10  2.5e+13
+treedepth__      2.0  3.9e-03    0.24   1.0   2.0   2.0   3693    18479  1.0e+00
+n_leapfrog__     3.2  1.4e-01     1.1   3.0   3.0   7.0     68      341  1.0e+00
+divergent__     0.00  0.0e+00    0.00  0.00  0.00  0.00   4000    20015     -nan
+energy__          48  4.8e-02     2.0    45    48    52   1810     9055  1.0e+00
+alpha           0.83  1.6e-03   0.099  0.66  0.82  0.99   4000    20015  1.0e+00
+beta[1]         0.90  1.4e-03   0.090  0.75  0.90   1.0   4000    20015  1.0e+00
+beta[2]          2.8  7.4e-03    0.47   2.0   2.8   3.6   4000    20015  1.0e+00
+sigma           0.96  1.1e-03   0.068  0.85  0.95   1.1   4000    20015  1.0e+00
+
+Samples were drawn using hmc with nuts.
+For each parameter, N_Eff is a crude measure of effective sample size,
+and R_hat is the potential scale reduction factor on split chains (at 
+convergence, R_hat=1).
+
+julia> describe(hw_stan_res[2])
+Iterations = 1:1000
+Thinning interval = 1
+Chains = 1,2,3,4
+Samples per chain = 1000
+
+Empirical Posterior Estimates:
+                  Mean          SD        Naive SE       MCSE         ESS  
+        alpha   0.82584693 0.095251639 0.00150606065 0.0011361759 4000.000000
+       beta.1   0.89913245 0.090973327 0.00143841460 0.0016418622 4000.000000
+       beta.2   2.79749220 0.485954717 0.00768361872 0.0068205937 4000.000000
+        sigma   0.95532941 0.068626987 0.00108508794 0.0010426138 4000.000000
+
+
+Quantiles:
+                  2.5%        25.0%       50.0%        75.0%       97.5% 
+        alpha   0.63904622   0.7603130   0.8246630   0.89123775   1.0082113
+       beta.1   0.72446435   0.8348335   0.8989090   0.96287700   1.0769953
+       beta.2   1.84282325   2.4680900   2.7950600   3.12770500   3.7521107
+        sigma   0.83513470   0.9074153   0.9516395   0.99887875   1.1052230
+```
