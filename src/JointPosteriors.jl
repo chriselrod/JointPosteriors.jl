@@ -28,7 +28,9 @@ export  JointPosterior,
         inv_root_det,
         root_det,
         log_root_det,
-        trace_inverse
+        trace_inverse,
+        lpdf_InverseWishart,
+        lpdf_normal
 
 
 
