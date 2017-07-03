@@ -287,71 +287,66 @@ julia> hw_jp = JointPosterior(HW_model, HW_data);
 
 julia> marginal(hw_jp, x -> x.β[1])
 Marginal parameter
-μ: 0.8244634737023615
-σ: 0.0986592330501434
-Quantiles: [0.628894 0.690754 0.743527 0.743527 0.743527]
+μ: 0.9637224944125826
+σ: 0.10149066254154264
+Quantiles: [0.761912 0.885964 0.944868 1.04253 1.16533]
 
 
 julia> marginal(hw_jp, x -> x.β[2])
 Marginal parameter
-μ: 0.8986692287796316
-σ: 0.09196302695208347
-Quantiles: [0.716489 0.823657 0.887789 0.89865 1.07577]
+μ: 0.9786158365167603
+σ: 0.10309823786508965
+Quantiles: [0.776268 0.915435 0.9646 1.0459 1.18057]
 
 
 julia> marginal(hw_jp, x -> x.β[3])
 Marginal parameter
-μ: 2.8062485454846993
-σ: 0.48421154364155206
-Quantiles: [1.84043 2.43793 2.74962 3.16046 3.77357]
+μ: 1.8130588530423797
+σ: 0.47275126327130096
+Quantiles: [0.865028 1.44886 1.72537 2.17061 2.76065]
 
 
 julia> marginal(hw_jp, x -> x.σ[1])
 Marginal parameter
-μ: 0.9563012862670179
-σ: 0.07002800461069793
-Quantiles: [0.834308 0.909538 0.959722 0.994694 1.08448]
+μ: 0.9735241762516216
+σ: 0.07128291739081981
+Quantiles: [0.841453 0.917923 0.974857 1.01546 1.1056]
 ```
 
 To again compare with Stan:
 ```
-const hw_stan = "data {
-  int N;
-  vector[N] y;
-  matrix[N, 2] x;
-}
-parameters {
-  real alpha;
-  vector[2] beta;
-  real<lower=0> sigma;
-}
-model {
-  alpha ~ normal(0, 10);
-  beta ~ normal(0, 10);
-  sigma ~ normal(0, 1);
-  y ~ normal(alpha + x * beta, sigma);
-}"
+julia> using Stan, Mamba
+julia> const hw_stan = "data {
+         int N;
+         vector[N] y;
+         matrix[N, 2] x;
+       }
+       parameters {
+         real alpha;
+         vector[2] beta;
+         real<lower=0> sigma;
+       }
+       model {
+         alpha ~ normal(0, 10);
+         beta ~ normal(0, 10);
+         sigma ~ normal(0, 1);
+         y ~ normal(alpha + x * beta, sigma);
+       }";
 
-hw_stan_data = Dict("N" => length(y), "x" => X[:,2:3], "y" => y)
+
+hw_stan_data = Dict("N" => length(y), "x" => X[:,2:3], "y" => y);
 hw_stan_model = Stanmodel(Sample(), name = "HelloWorld", model = hw_stan, monitors = ["alpha", "beta.1", "beta.2", "sigma"]);
 hw_stan_res = stan(hw_stan_model, [hw_stan_data])
 
 
-Warmup took (0.064, 0.050, 0.063, 0.054) seconds, 0.23 seconds total
-Sampling took (0.054, 0.043, 0.057, 0.045) seconds, 0.20 seconds total
+Warmup took (0.049, 0.063, 0.065, 0.060) seconds, 0.24 seconds total
+Sampling took (0.058, 0.059, 0.070, 0.046) seconds, 0.23 seconds total
 
                 Mean     MCSE  StdDev    5%   50%   95%  N_Eff  N_Eff/s    R_hat
-lp__             -46  3.2e-02     1.4   -49   -45   -44   1994     9978  1.0e+00
-accept_stat__   0.86  2.2e-03    0.14  0.59  0.90   1.0   4000    20015  1.0e+00
-stepsize__       1.0  2.9e-02   0.041  0.97   1.0   1.1    2.0       10  2.5e+13
-treedepth__      2.0  3.9e-03    0.24   1.0   2.0   2.0   3693    18479  1.0e+00
-n_leapfrog__     3.2  1.4e-01     1.1   3.0   3.0   7.0     68      341  1.0e+00
-divergent__     0.00  0.0e+00    0.00  0.00  0.00  0.00   4000    20015     -nan
-energy__          48  4.8e-02     2.0    45    48    52   1810     9055  1.0e+00
-alpha           0.83  1.6e-03   0.099  0.66  0.82  0.99   4000    20015  1.0e+00
-beta[1]         0.90  1.4e-03   0.090  0.75  0.90   1.0   4000    20015  1.0e+00
-beta[2]          2.8  7.4e-03    0.47   2.0   2.8   3.6   4000    20015  1.0e+00
-sigma           0.96  1.1e-03   0.068  0.85  0.95   1.1   4000    20015  1.0e+00
+alpha           0.96  1.6e-03   0.099  0.81  0.96   1.1   4000    17105  1.0e+00
+beta[1]         0.98  1.6e-03   0.099  0.81  0.98   1.1   4000    17105  1.0e+00
+beta[2]          1.8  7.3e-03    0.46   1.0   1.8   2.6   4000    17105  1.0e+00
+sigma           0.97  1.1e-03   0.071  0.87  0.97   1.1   4000    17105  1.0e+00
 
 Samples were drawn using hmc with nuts.
 For each parameter, N_Eff is a crude measure of effective sample size,
@@ -365,17 +360,235 @@ Chains = 1,2,3,4
 Samples per chain = 1000
 
 Empirical Posterior Estimates:
-                  Mean          SD        Naive SE       MCSE         ESS  
-        alpha   0.82584693 0.095251639 0.00150606065 0.0011361759 4000.000000
-       beta.1   0.89913245 0.090973327 0.00143841460 0.0016418622 4000.000000
-       beta.2   2.79749220 0.485954717 0.00768361872 0.0068205937 4000.000000
-        sigma   0.95532941 0.068626987 0.00108508794 0.0010426138 4000.000000
-
+          Mean       SD       Naive SE        MCSE      ESS
+ alpha 0.9640783 0.09935180 0.0015708900 0.00143550485 1000
+beta.1 0.9792272 0.09888484 0.0015635066 0.00131295816 1000
+beta.2 1.8068558 0.46109904 0.0072906159 0.00607401839 1000
+ sigma 0.9747241 0.07094793 0.0011217853 0.00089428097 1000
 
 Quantiles:
-                  2.5%        25.0%       50.0%        75.0%       97.5% 
-        alpha   0.63904622   0.7603130   0.8246630   0.89123775   1.0082113
-       beta.1   0.72446435   0.8348335   0.8989090   0.96287700   1.0769953
-       beta.2   1.84282325   2.4680900   2.7950600   3.12770500   3.7521107
-        sigma   0.83513470   0.9074153   0.9516395   0.99887875   1.1052230
+          2.5%       25.0%     50.0%     75.0%    97.5%  
+ alpha 0.77095010 0.89520000 0.9648350 1.029915 1.1616973
+beta.1 0.78276900 0.91301350 0.9785735 1.044990 1.1700938
+beta.2 0.89037090 1.49718500 1.8089600 2.119275 2.6946383
+ sigma 0.84931168 0.92615475 0.9699075 1.019295 1.1260908
+
+```
+Speed comparison:
+```
+julia> function run_hw()
+         hw_jp = JointPosterior(HW_model, HW_data);
+         marginal(hw_jp, x -> x.β[1])
+         marginal(hw_jp, x -> x.β[2])
+         marginal(hw_jp, x -> x.β[3])
+         marginal(hw_jp, x -> x.σ[1])
+       end
+run_hw (generic function with 1 method)
+
+julia> using BenchmarkTools
+
+julia> @benchmark run_hw()
+BenchmarkTools.Trial: 
+  memory estimate:  14.75 MiB
+  allocs estimate:  152942
+  --------------
+  minimum time:     28.582 ms (0.00% GC)
+  median time:      32.269 ms (9.78% GC)
+  mean time:        31.520 ms (6.84% GC)
+  maximum time:     35.218 ms (9.30% GC)
+  --------------
+  samples:          159
+  evals/sample:     1
+```
+
+Again, much faster. However, while the means and standard deviations are spot on, the quantile estimates in this example are poor.
+The interpolation used for generating the quantiles is in dire need of revamping. They are generally biased slightly conservative, but certain conditions can cause this bias to balloon.
+
+
+#### Example 3: ANOVA
+
+The LogDensities package also includes optimized versions of several popular models.
+For example, it includes a two factor random effects ANOVA with a folded Cauchy prior on the second factor variance, and improper priors elsewhere as in
+> Weaver, B. P., Hamada, M. S., Vardeman, S. B., & Wilson, A. G. (2012). A bayesian approach to the analysis of gauge r&r data. Quality Engineering, 24(4), 486-500.
+
+Specifying the model is straightforward:
+```
+julia> anova = Model(LogDensities.TF_RE_ANOVA);
+```
+We can use the Distributions package to generate a sample data set:
+```
+julia> using Distributions
+
+julia> function gen_data(μ::Real, σ_P::Real, σ_O::Real, σ_PO::Real, σ_R::Real, P::Int64, O::Int64, R::Int64)::Tuple{Array{Float64,1},Array{Int64,1},Array{Int64,1}}
+         PO = P*O
+         POR = PO*R
+         θp_true = rand(Normal(0, σ_P), P)
+         θo_true = rand(Normal(0, σ_O), O)
+         θpo_true = Array{Float64}(P, O)
+         Npo = Normal(0, σ_PO)
+         for p ∈ 1:P
+           θpo_true[p,:] .= rand(Npo, O)
+         end
+         yp = Vector{Int64}(POR)
+         yo = Vector{Int64}(POR)
+         y = Vector{Float64}(POR)
+         i = 1:R
+         for p ∈ 1:P
+           for o ∈ 1:O
+             y[i,:] .= rand(Normal(μ + θp_true[p] + θo_true[o] + θpo_true[p,o], σ_R), R)
+             yp[i] = p
+             yo[i] = o
+             i += R
+           end
+         end
+         y, yp, yo
+       end
+gen_data (generic function with 1 method)
+
+julia> y, yp, yo = gen_data(15, √99, √0.6, √0.3, √.1, 40, 12, 12);
+```
+The vector y contains data, while vectors yp and yo indicate group membership for the first and second factors, respectively. That is,
+```
+julia> y[200], yp[200], yo[200]
+(27.661953803848693, 2, 5)
+```
+The 200th measurement was made of the second part (factor 1) by the fifth operator (factor 2). And that measurement was roughly 27.7.
+
+Now that we have data, we can analyze it. Calling the two factor random effects ANOVA data function from the log densities module, and constructing the joint posterior:
+```
+julia> d = LogDensities.TF_RE_ANOVA_Data(y, yp, yo);
+julia> typeof(d)
+LogDensities.TF_RE_ANOVA_Data_balanced
+julia> jp = JointPosterior(anova, d);
+```
+One of the primary parameters of interest was the ratio of variability not attributable solely to the part (termed gauge variability) to the total variability. Finding the marginal:
+```
+julia> function rGT(Θ::LogDensities.TF_RE_ANOVA)
+         σg2 = sum(Θ.σ[2:end])
+         sqrt(σg2 / (σg2 + Θ.σ[1]))
+       end
+rGT (generic function with 1 method)
+
+julia> marginal_rGT = marginal(jp, rGT)
+Marginal parameter
+μ: 0.08517244124701978
+σ: 0.015172385858816277
+Quantiles: [0.0605517 0.0741515 0.0844895 0.0939557 0.119678]
+```
+Again, we evoke the Stan comparison. The model below simplified the likelihood by using cell means instead of iterating over each replication, although it is possible to simplify the calculations much further. A difference between the model below (and that from the LogDensities package) is that they pin the grand mean at the sample mean instead of using a flat prior.
+```
+julia> const tfanova = "
+       data {
+         int Np1;
+         int p;
+         int o;
+         int POp1;
+         matrix[p, o] cat_count;
+         matrix[p, o] y_bars;
+         real ns2h;
+       }
+       transformed data {
+         real n;
+         real po;
+         matrix[p, o] invRootCounts;
+         invRootCounts = inv_sqrt(cat_count);
+         n = sum(cat_count);
+         po = p * o;
+       }
+       parameters {
+         real mu_G;
+         vector[p] theta_p;
+         vector[o] theta_o;
+         matrix[p,o] theta_po;
+         real<lower = 0> sigma_p;
+         real<lower = 0> sigma_o;
+         real<lower = 0> sigma_po;
+         real<lower = 0> sigma_r;
+       }
+       model {
+         matrix[p,o] quad;
+         for (i in 1:p){
+           theta_po[i, ] ~ normal(0, sigma_po);
+           for (j in 1:o){
+             y_bars[i,j] ~ normal( mu_G + theta_p[i] + theta_o[j] + theta_po[i, j], invRootCounts[i,j] * sigma_r);
+           }
+         }
+         mu_G ~ normal(0, 50);
+         theta_p ~ normal(0, sigma_p);
+         theta_o ~ normal(0, sigma_o);
+         sigma_o ~ cauchy(0, 20);
+         target += ns2h / sigma_r^2 - (n - po) * log(sigma_r) ;
+       }
+       generated quantities {
+         real sigma_g2;
+         real sigma_g;
+         real sigma_t;
+         real rGT;
+         sigma_g2 = sigma_o^2 + sigma_po^2 + sigma_r^2;
+         sigma_g = sqrt(sigma_g2);
+         sigma_t = sqrt(sigma_g2 + sigma_p^2);
+         rGT = sigma_g / sigma_t;
+       };
+
+julia> using Stan, Mamba
+julia> anova_stan = Stanmodel(Sample(), name = "ANOVA", model = tfanova, monitors = ["sigma_g", "sigma_t", "rGT"]);
+File /mnt/ssd/Projects/SparseGrid/tmp/ANOVA.stan will be updated.
+julia> function StanDataANOVA(data::Data)
+         Dict( "Np1" => data.N + 1, "p" => data.P, "Pp1" => data.P + 1, "o" => data.O, "POp1" => data.PO + 1, "cat_count" => fill(data.R, data.P, data.O), "y_bars" => data.δ .+ data.μ_hat, "ns2h" =>  - data.s2 / 2.0)
+       end
+StanDataANOVA (generic function with 1 method)
+
+julia> res = stan(anova_stan, [StanDataANOVA(d)])
+Warmup took (73, 67, 75, 81) seconds, 4.9 minutes total
+Sampling took (70, 103, 69, 72) seconds, 5.2 minutes total
+                      Mean     MCSE   StdDev        5%       50%       95%  N_Eff  N_Eff/s    R_hat
+sigma_p            1.1e+01  4.5e-02  1.3e+00   9.1e+00   1.1e+01   1.3e+01    802  2.6e+00  1.0e+00
+sigma_o            6.3e-01  6.3e-03  1.7e-01   4.3e-01   6.0e-01   9.4e-01    705  2.2e+00  1.0e+00
+sigma_po           5.6e-01  6.5e-04  2.0e-02   5.3e-01   5.6e-01   6.0e-01    945  3.0e+00  1.0e+00
+sigma_r            3.2e-01  8.4e-05  3.1e-03   3.1e-01   3.2e-01   3.2e-01   1376  4.4e+00  1.0e+00
+sigma_g2           8.5e-01  9.2e-03  2.6e-01   6.0e-01   7.8e-01   1.3e+00    766  2.4e+00  1.0e+00
+sigma_g            9.1e-01  4.5e-03  1.2e-01   7.7e-01   8.9e-01   1.1e+00    735  2.3e+00  1.0e+00
+sigma_t            1.1e+01  4.5e-02  1.3e+00   9.1e+00   1.1e+01   1.3e+01    800  2.5e+00  1.0e+00
+rGT                8.4e-02  4.7e-04  1.5e-02   6.4e-02   8.3e-02   1.1e-01    958  3.1e+00  1.0e+00
+julia> describe(res[2])
+Iterations = 1:1000
+Thinning interval = 1
+Chains = 1,2,3,4
+Samples per chain = 1000
+
+Empirical Posterior Estimates:
+            Mean         SD        Naive SE        MCSE        ESS   
+sigma_g  0.91316001 0.123253102 0.00194880266 0.00437419976 793.95976
+sigma_t 10.99113350 1.280206526 0.02024184248 0.04232975496 914.67870
+    rGT  0.08415345 0.014655471 0.00023172334 0.00046763508 982.16706
+
+Quantiles:
+            2.5%       25.0%       50.0%       75.0%        97.5%   
+sigma_g 0.759504575  0.82847025  0.88556350  0.96803125  1.222992500
+sigma_t 8.799354000 10.08725000 10.89855000 11.78357500 13.809942500
+    rGT 0.061066755  0.07390550  0.08271435  0.09192043  0.118740275
+```
+
+Four chains with 1,000 posterior samples (but a total effective sample size of < 1,000) took just over 10 minutes. For comparison:
+```
+julia> function run_anova()
+         jp = JointPosterior(anova, d)
+         marginal_rGT = marginal(jp, rGT)
+       end
+run_anova (generic function with 1 method)
+
+julia> using BenchmarkTools
+
+julia> @benchmark run_anova()
+BenchmarkTools.Trial: 
+  memory estimate:  2.94 MiB
+  allocs estimate:  48594
+  --------------
+  minimum time:     13.004 ms (0.00% GC)
+  median time:      13.573 ms (0.00% GC)
+  mean time:        14.041 ms (3.28% GC)
+  maximum time:     18.057 ms (20.52% GC)
+  --------------
+  samples:          356
+  evals/sample:     1
 ```
