@@ -9,7 +9,7 @@
 ## Introduction
 
 This package implements sparse grid quadrature. I'm working on documentation, organization, tests, and adding more features. And then on getting this package registered. Until then, you can still install via
-```
+```julia
 julia> Pkg.clone("https://github.com/chriselrod/SparseQuadratureGrids.jl")
 julia> Pkg.clone("https://github.com/chriselrod/LogDensities.jl")
 julia> Pkg.clone("https://github.com/chriselrod/JointPosteriors.jl")
@@ -23,7 +23,7 @@ As an example, consider the model from:
 In the model, there was some number (N) of parts that were defective with probability 1-tau. We have a test that is imperfect, with a false-effective rate of theta+, and a false-defective rate of theta-. For example, if a part is actually defective, the test will rate it as effective with probability theta+. We can test each part (n) times, and we treat each trial as independent.
 
 So, our parameters are a total of three different probabilities. We can specify this via building a parameter struct, and specifying that it has a probability vector of length 3. We'll let the first index denote tau, the second theta_minus, and the last theta_plus.
-```
+```julia
 julia> using JointPosteriors
 
 julia> struct BinaryClassification{T} <: parameters{T}
@@ -34,12 +34,12 @@ julia> struct BinaryClassification{T} <: parameters{T}
 Currently, when defining parameter structures, the first field must always be `x::Vector{T}`. This may change eventually (depending in part by how much people hate that).
 
 That is all we need to initialize our model:
-```
+```julia
 julia> bc_model = Model(BinaryClassification);
 ```
 
 But before we really do anything with it, we need data nad a log likelihood function. We have a lot of freedom to write these parts however we'd like.
-```
+```julia
 julia> struct BinaryClassificationData <: Data
          X::Array{Int64,1}
          freq::Array{Int64,1}
@@ -57,7 +57,7 @@ In this case, `X` is how many of the (n) trials were succesful, and `freq` is th
 The six `Float64`s at the end are parameters for beta priors minus one. I subtract one off of each because of beta pdf.
 Now, all we must do is define the log density function of our model. Putting our priors together, and summing out the unknown true status gives us the following log density:
 
-```
+```julia
 julia> function log_density(Θ::BinaryClassification, data::Data)
 
          log_π = data.α_m_m1 * log(Θ.p[2]) + data.β_m_m1 * log(1 - Θ.p[2]) + data.α_p_m1*log(Θ.p[3]) + data.β_p_m1 * log(1 - Θ.p[3]) + data.α_τ_m1 * log(Θ.p[1]) + data.β_τ_m1 * log(1 - Θ.p[1])
@@ -72,7 +72,7 @@ julia> function log_density(Θ::BinaryClassification, data::Data)
 ```
 
 We can define a convenience function for creaturing our data structure, which defaults our Beta parameters to one.
-```
+```julia
 julia> function BinaryClassificationData(X::Array{Int, 1}, freq::Array{Int,1}, n::Int; αm::Real = 1, βm::Real = 1, αp::Real = 1, βp::Real = 1, ατ::Real = 1, βτ::Real = 1)
          BinaryClassificationData(X, freq, n .- X, αm - 1, βm - 1, αp - 1, βp - 1, ατ - 1, βτ - 1)
        end
@@ -88,12 +88,12 @@ For our test error rates, we use Beta(1,2) priors, to add a little information t
 
 Now that we have data, we can calculate the joint posterior:
 
-```
+```julia
 julia> jp = JointPosterior(bc_model, data);
 ```
 
 But really, we're more interested in the marginals distributions of our three parameters. So, simply define functions finding the marginals we're interested in:
-```
+```julia
 julia> τ(Θ::BinaryClassification) = Θ.p[1]
 τ (generic function with 1 method)
 
@@ -105,7 +105,7 @@ julia> θ_plus(Θ::BinaryClassification) = Θ.p[3]
 
 ```
 And compute the marginals!
-```
+```julia
 julia> marginal_τ = marginal(jp, τ)
 Marginal parameter
 μ: 0.5503617376062098
@@ -129,7 +129,7 @@ Quantiles: [0.0713712 0.0951648 0.112278 0.13201 0.170533]
 ###### Comparison with Stan
 
 You can compare these results with that from MCMC. For example, using Stan
-```
+```julia
 julia> using Stan, Mamba
 julia> Stan_data = Dict( "n" => 9, "N" => 38, "X" => vcat(zeros(Int64, 10), ones(Int64, 2), fill(2,2), 3, fill(4, 2), fill(7, 3), fill(8, 2), fill(9, 16)));
 julia> const binary = "
@@ -165,8 +165,7 @@ julia> const binary = "
            cache[i] = tau * OmTm^X[i] * theta_minus^NmX[i] + OmTau * theta_plus^X[i] * OmTp^NmX[i];
          }
          target += sum(log(cache));
-       }
-       ";
+       }";
 
 julia> binary_class_stan = Stanmodel(Sample(), name = "Binary", model = binary, monitors = ["tau", "theta_minus", "theta_plus"]);
 julia> stan_res = stan(binary_class_stan, [Stan_data])
@@ -210,7 +209,7 @@ theta_minus 0.025102625 0.04061495 0.0504063 0.06183745 0.08850898
 ```
 
 Note that total CPU time was just under a second. For comparison,
-```
+```julia
 julia> function run_bc_model()
          jp = JointPosterior(bc_model, data)
          marginal_τ = marginal(jp, τ)
@@ -241,7 +240,7 @@ That is about 0.89 seconds for MCMC vs 15 milliseconds, about 60-fold faster usi
 
 Bob Carpenter [compared how](http://andrewgelman.com/2017/05/31/compare-stan-pymc3-edward-hello-world/) you implement linear regression in Stan, PyMC3, and Edward. 
 To specify the model here, we just need:
-```
+```julia
 julia> struct HiWorld{T} <: parameters{T,1}
          x::Vector{T}
          β::RealVector{3,T}
@@ -259,7 +258,7 @@ julia> function log_density(Θ::HiWorld, data::Data)
 ```
 
 We can create our own dataset like that from the PyMC3 example.
-```
+```julia
 julia> # True parameter values
        sigma = 1;
 
@@ -278,7 +277,7 @@ julia> # Simulate outcome variable
 ```
 
 Running the model:
-```
+```julia
 julia> HW_data = HiWorldData(X, y);
 
 julia> HW_model = Model(HiWorld);
@@ -314,7 +313,7 @@ Quantiles: [0.841453 0.917923 0.974857 1.01546 1.1056]
 ```
 
 To again compare with Stan:
-```
+```julia
 julia> using Stan, Mamba
 julia> const hw_stan = "data {
          int N;
@@ -334,9 +333,9 @@ julia> const hw_stan = "data {
        }";
 
 
-hw_stan_data = Dict("N" => length(y), "x" => X[:,2:3], "y" => y);
-hw_stan_model = Stanmodel(Sample(), name = "HelloWorld", model = hw_stan, monitors = ["alpha", "beta.1", "beta.2", "sigma"]);
-hw_stan_res = stan(hw_stan_model, [hw_stan_data])
+julia> hw_stan_data = Dict("N" => length(y), "x" => X[:,2:3], "y" => y);
+julia> hw_stan_model = Stanmodel(Sample(), name = "HelloWorld", model = hw_stan, monitors = ["alpha", "beta.1", "beta.2", "sigma"]);
+julia> hw_stan_res = stan(hw_stan_model, [hw_stan_data])
 
 
 Warmup took (0.049, 0.063, 0.065, 0.060) seconds, 0.24 seconds total
@@ -375,7 +374,7 @@ beta.2 0.89037090 1.49718500 1.8089600 2.119275 2.6946383
 
 ```
 Speed comparison:
-```
+```julia
 julia> function run_hw()
          hw_jp = JointPosterior(HW_model, HW_data);
          marginal(hw_jp, x -> x.β[1])
@@ -412,11 +411,11 @@ For example, it includes a two factor random effects ANOVA with a folded Cauchy 
 > Weaver, B. P., Hamada, M. S., Vardeman, S. B., & Wilson, A. G. (2012). A bayesian approach to the analysis of gauge r&r data. Quality Engineering, 24(4), 486-500.
 
 Specifying the model is straightforward:
-```
+```julia
 julia> anova = Model(LogDensities.TF_RE_ANOVA);
 ```
 We can use the Distributions package to generate a sample data set:
-```
+```julia
 julia> using Distributions
 
 julia> function gen_data(μ::Real, σ_P::Real, σ_O::Real, σ_PO::Real, σ_R::Real, P::Int64, O::Int64, R::Int64)::Tuple{Array{Float64,1},Array{Int64,1},Array{Int64,1}}
@@ -448,21 +447,21 @@ gen_data (generic function with 1 method)
 julia> y, yp, yo = gen_data(15, √99, √0.6, √0.3, √.1, 40, 12, 12);
 ```
 The vector y contains data, while vectors yp and yo indicate group membership for the first and second factors, respectively. That is,
-```
+```julia
 julia> y[200], yp[200], yo[200]
 (27.661953803848693, 2, 5)
 ```
 The 200th measurement was made of the second part (factor 1) by the fifth operator (factor 2). And that measurement was roughly 27.7.
 
 Now that we have data, we can analyze it. Calling the two factor random effects ANOVA data function from the log densities module, and constructing the joint posterior:
-```
+```julia
 julia> d = LogDensities.TF_RE_ANOVA_Data(y, yp, yo);
 julia> typeof(d)
 LogDensities.TF_RE_ANOVA_Data_balanced
 julia> jp = JointPosterior(anova, d);
 ```
 One of the primary parameters of interest was the ratio of variability not attributable solely to the part (termed gauge variability) to the total variability. Finding the marginal:
-```
+```julia
 julia> function rGT(Θ::LogDensities.TF_RE_ANOVA)
          σg2 = sum(Θ.σ[2:end])
          sqrt(σg2 / (σg2 + Θ.σ[1]))
@@ -476,7 +475,7 @@ Marginal parameter
 Quantiles: [0.0605517 0.0741515 0.0844895 0.0939557 0.119678]
 ```
 Again, we evoke the Stan comparison. The model below simplified the likelihood by using cell means instead of iterating over each replication, although it is possible to simplify the calculations much further. A difference between the model below (and that from the LogDensities package) is that they pin the grand mean at the sample mean instead of using a flat prior.
-```
+```julia
 julia> const tfanova = "
        data {
          int Np1;
@@ -570,7 +569,7 @@ sigma_t 8.799354000 10.08725000 10.89855000 11.78357500 13.809942500
 ```
 
 Four chains with 1,000 posterior samples (but a total effective sample size of < 1,000) took just over 10 minutes. For comparison:
-```
+```julia
 julia> function run_anova()
          jp = JointPosterior(anova, d)
          marginal_rGT = marginal(jp, rGT)
