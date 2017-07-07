@@ -528,7 +528,7 @@ julia> const tfanova = "
          sigma_g = sqrt(sigma_g2);
          sigma_t = sqrt(sigma_g2 + sigma_p^2);
          rGT = sigma_g / sigma_t;
-       };
+       }";
 
 julia> using Stan, Mamba
 julia> anova_stan = Stanmodel(Sample(), name = "ANOVA", model = tfanova, monitors = ["sigma_g", "sigma_t", "rGT"]);
