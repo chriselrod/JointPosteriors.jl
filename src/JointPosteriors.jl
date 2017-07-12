@@ -4,6 +4,7 @@ using Optim
 using SparseQuadratureGrids
 using LogDensities
 using Interpolations
+using Distributions
 
 import  Base.show,
         Base.quantile
@@ -30,7 +31,8 @@ export  JointPosterior,
         log_root_det,
         trace_inverse,
         lpdf_InverseWishart,
-        lpdf_normal
+        lpdf_normal,
+        Normal
 
 
 

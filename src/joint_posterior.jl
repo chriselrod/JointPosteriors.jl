@@ -40,7 +40,7 @@ end
 
 function JointPosterior{p, q <: QuadratureRule, P <: parameters}( M::Model{p, q, P} , data::Data )
 
-  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> negative_log_density(x, M.UA, data), M.Θ.x, autodiff = :forward), method = LBFGS()))#NewtonTrustRegion()
+  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> negative_log_density(x, M.UA, data), M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
   L = lower_chol(hessian(x -> negative_log_density(x, M.UA, data), Θ_hat) * 2)
 
 #  Θ = construct(P{Float64})
