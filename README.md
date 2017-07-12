@@ -26,7 +26,7 @@ So, our parameters are a total of three different probabilities. We can specify 
 ```julia
 julia> using JointPosteriors
 
-julia> struct BinaryClassification{T} <: parameters{T}
+julia> struct BinaryClassification{T} <: parameters{T,1}
          x::Vector{T}
          p::ProbabilityVector{3,T}
        end
@@ -146,28 +146,27 @@ julia> const binary = "
        }
        parameters {
          real<lower = 0, upper = 1> tau;
-         real<lower = 0, upper = 0.5> theta_minus;
-         real<lower = 0, upper = 0.5> theta_plus;
+         simplex[3] theta;
        }
        transformed parameters {
          real OmTau;
          real OmTm;
          real OmTp;
          OmTau = 1 - tau;
-         OmTm = 1 - theta_minus;
-         OmTp = 1 - theta_plus;
+         OmTm = 1 - theta[1];
+         OmTp = 1 - theta[2];
        }
        model {
          vector[N] cache;
-         OmTm ~ beta(1, 2);
-         OmTp ~ beta(1, 2);
+         theta[1] ~ beta(1, 2);
+         theta[2] ~ beta(1, 2);
          for (i in 1:N){
-           cache[i] = tau * OmTm^X[i] * theta_minus^NmX[i] + OmTau * theta_plus^X[i] * OmTp^NmX[i];
+           cache[i] = tau * OmTm^X[i] * theta[1]^NmX[i] + OmTau * theta[2]^X[i] * OmTp^NmX[i];
          }
          target += sum(log(cache));
        }";
 
-julia> binary_class_stan = Stanmodel(Sample(), name = "Binary", model = binary, monitors = ["tau", "theta_minus", "theta_plus"]);
+julia> binary_class_stan = Stanmodel(Sample(), name = "Binary", model = binary, monitors = ["tau", "theta"]);
 julia> stan_res = stan(binary_class_stan, [Stan_data])
 ...snip...
 Warmup took (0.11, 0.13, 0.12, 0.11) seconds, 0.48 seconds total
