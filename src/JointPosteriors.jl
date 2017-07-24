@@ -2,6 +2,7 @@ module JointPosteriors
 
 using Optim
 using SparseQuadratureGrids
+using ConstrainedParameters
 using LogDensities
 using Interpolations
 using Distributions

@@ -5,35 +5,51 @@ struct JointPosterior{p, q, P}
   Θ_hat::Array{Float64,1}
   L::LowerTriangular{Float64,Array{Float64,2}}
 end
-
-lower_chol{T <: Real}(A::Array{T, 2}) = transpose(inv(chol(Symmetric(A))))
+function lower_chol{T <: Real}(A::Array{T, 2})
+  try
+    return inv(chol(Symmetric(A), :L))
+  catch x
+    ef = eigfact(A)
+    p = size(A,1)
+    λ = ef.values
+    z = isapprox.(λ, 0.0, atol = 1e-10)
+    warn("x"*"\nModel is probably nearly unidentifiable.\nModel has $p parameters but is of approximate rank $(p-sum(z)).")
+#    for i ∈ 1:p
+#      if z[i]
+#        λ[i] = 1.0
+#      else
+#        λ[i] = d[i]^-0.5
+#      end
+#    end
+    warn("Temporary hack-fix, because currently only lower cholesky outputs are supported.")
+    return lower_chol(A + 0.001I)
+  end
+end
 
 function negative_log_density!(::Type{GenzKeister}, x::Vector, Θ::parameters, data::Data, Θ_hat::Vector, L::LowerTriangular)
   Θ.x .= Θ_hat .+ L * x
+  update!(Θ)
   negative_log_density!(Θ, data)
 end
-function sigmoid(x::Vector)
-  log.( (1 .+ x) ./ (1 .- x) )
-end
-function sigmoid_jacobian!(x::Vector)
-  out = -sum(log, 1 .- x .^ 2)
-  x .= sigmoid.(x)
-  out
-end
+
+sigmoid_jacobian(x::Vector) = -sum(log, 1 .- x .^ 2)
 
 function negative_log_density!(::Type{KronrodPatterson}, x::Vector, Θ::parameters, data::Data, Θ_hat::Vector, L::LowerTriangular)
-  l_jac = sigmoid_jacobian!(x)
-  Θ.x .= Θ_hat .+ L * x
+  l_jac = sigmoid_jacobian(x)
+  Θ.x .= Θ_hat .+ L * sigmoid.(x)
+  update!(Θ)
   negative_log_density!(Θ, data) - l_jac
 end
 
 function transform!(Θ::parameters, x::Vector, Θ_hat::Vector, L::LowerTriangular, ::Type{KronrodPatterson})
-  Θ.x .= Θ_hat .+ L * sigmoid.(x)
+  Θ.x .= Θ_hat .+ ( L * sigmoid.(x) )
+  update!(Θ)
   Θ
 end
 
 function transform!(Θ::parameters, x::Vector, Θ_hat::Vector, L::LowerTriangular, ::Type{GenzKeister})
-  Θ.x .= Θ_hat .+ L * x
+  Θ.x .= Θ_hat .+ ( L * x )
+  update!(Θ)
   Θ
 end
 
