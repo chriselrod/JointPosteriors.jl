@@ -7,8 +7,7 @@ using LogDensities
 using Interpolations
 using Distributions
 
-import  Base.show,
-        Base.quantile
+import  Base: show, quantile
 import  ForwardDiff: hessian
 import  LogDensities: negative_log_density!
 

@@ -1,54 +1,96 @@
 struct JointPosterior{p, q, P}
-  M::Model
-  weights_positive::Array{Float64,1}
-  weights_negative::Array{Float64,1}
-  Θ_hat::Array{Float64,1}
-  L::LowerTriangular{Float64,Array{Float64,2}}
-end
-function lower_chol{T <: Real}(A::Array{T, 2})
-  try
-    return inv(chol(Symmetric(A), :L))
-  catch x
-    ef = eigfact(A)
-    p = size(A,1)
-    λ = ef.values
-    z = isapprox.(λ, 0.0, atol = 1e-10)
-    warn("x"*"\nModel is probably nearly unidentifiable.\nModel has $p parameters but is of approximate rank $(p-sum(z)).")
-#    for i ∈ 1:p
-#      if z[i]
-#        λ[i] = 1.0
-#      else
-#        λ[i] = d[i]^-0.5
-#      end
-#    end
-    warn("Temporary hack-fix, because currently only lower cholesky outputs are supported.")
-    return lower_chol(A + 0.001I)
-  end
+  M::Model{p, q, P}
+  grid::FlattenedGrid{q}
+  Θ_hat::Vector{Float64}
+  U::Array{Float64,2}
 end
 
-function negative_log_density!(::Type{GenzKeister}, x::Vector, Θ::parameters, data::Data, Θ_hat::Vector, L::LowerTriangular)
-  Θ.x .= Θ_hat .+ L * x
+
+function chol!(U::AbstractArray{<:Real,2}, Σ::AbstractArray{<:Real,2})
+  @inbounds for i ∈ 1:size(U,1)
+    U[i,i] = Σ[i,i]
+    for j ∈ 1:i-1
+      U[j,i] = Σ[j,i]
+      for k ∈ 1:j-1
+        U[j,i] -= U[k,i] * U[k,j]
+      end
+      U[j,i] /= U[j,j]
+      U[i,i] -= U[j,i]^2
+    end
+    U[i,i] > 0 ? U[i,i] = √U[i,i] : return false
+  end
+  true
+end
+function inv!(U_inverse::AbstractArray{<:Real,2}, U::AbstractArray{<:Real,2})
+  for i ∈ 1:size(U,1)
+    U_inverse[i,i] = 1 / U[i,i]
+    for j ∈ i+1:size(U,1)
+      U_inverse[i,j] = U[i,j] * U_inverse[i,i]
+      for k ∈ i+1:j-1
+        U_inverse[i,j] += U[k,j] * U_inverse[i,k]
+      end
+      U_inverse[i,j] /= -U[j,j]
+    end
+  end
+end
+function inv!(U::AbstractArray{<:Real,2})
+  for i ∈ 1:size(U,1)
+    U[i,i] = 1 / U[i,i]
+    for j ∈ i+1:size(U,1)
+      U[i,j] = U[i,j] * U[i,i]
+      for k ∈ i+1:j-1
+        U[i,j] += U[k,j] * U[i,k]
+      end
+      U[i,j] /= -U[j,j]
+    end
+  end
+  true
+end
+function inv_chol!(U, H)
+  chol!(U, H) ? inv!(U) : false
+end
+function reduce_dimensions!(M::Model, H::Array{Float64,2})
+  ef = eigfact!(Symmetric(H))
+  v0 = ef.values .> 1e-13
+  r = sum(v0)
+  out = SparseQuadratureGrids.mats(M.Grid, r)
+  g0 = 0
+  for i ∈ eachindex(ef.values)
+    if v0[i]
+      g0 += 1
+      out[:,g0] .= ef.vectors[:,i] ./ √ef.values[i]
+    end
+  end
+  out
+end
+
+function deduce_scale!(M::Model, H::Array{Float64,2})
+  inv_chol!(M.Grid.U, H) ? M.Grid.U : reduce_dimensions!(M, H)
+end
+
+function negative_log_density!(::Type{GenzKeister}, x::AbstractArray{<:Real,1}, Θ::parameters, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
+  Θ.x .= Θ_hat .+ U * x
   update!(Θ)
   negative_log_density!(Θ, data)
 end
 
-sigmoid_jacobian(x::Vector) = -sum(log, 1 .- x .^ 2)
+sigmoid_jacobian(x::AbstractArray{<:Real,1}) = -sum(log, 1 .- x .^ 2)
 
-function negative_log_density!(::Type{KronrodPatterson}, x::Vector, Θ::parameters, data::Data, Θ_hat::Vector, L::LowerTriangular)
+function negative_log_density!(::Type{KronrodPatterson}, x::AbstractArray{<:Real,1}, Θ::parameters, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
   l_jac = sigmoid_jacobian(x)
-  Θ.x .= Θ_hat .+ L * sigmoid.(x)
+  Θ.x .= Θ_hat .+ U * sigmoid.(x)
   update!(Θ)
   negative_log_density!(Θ, data) - l_jac
 end
 
-function transform!(Θ::parameters, x::Vector, Θ_hat::Vector, L::LowerTriangular, ::Type{KronrodPatterson})
-  Θ.x .= Θ_hat .+ ( L * sigmoid.(x) )
+function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, U::AbstractArray{<:Real,2}, ::Type{KronrodPatterson})
+  Θ.x .= Θ_hat .+ ( U * sigmoid.(x) )
   update!(Θ)
   Θ
 end
 
-function transform!(Θ::parameters, x::Vector, Θ_hat::Vector, L::LowerTriangular, ::Type{GenzKeister})
-  Θ.x .= Θ_hat .+ ( L * x )
+function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, U::AbstractArray{<:Real,2}, ::Type{GenzKeister})
+  Θ.x .= Θ_hat .+ ( U * x )
   update!(Θ)
   Θ
 end
@@ -56,25 +98,18 @@ end
 
 function JointPosterior{p, q <: QuadratureRule, P <: parameters}( M::Model{p, q, P} , data::Data )
 
-  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> negative_log_density(x, M.UA, data), M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
-  L = lower_chol(hessian(x -> negative_log_density(x, M.UA, data), Θ_hat) * 2)
+  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> negative_log_density(x, M.UA, data), M.Θ.x, autodiff = :forward), method = LBFGS()))#LBFGS; NewtonTrustRegion
+  U = deduce_scale!(M, 2hessian(x -> negative_log_density(x, M.UA, data), Θ_hat))
 
-#  Θ = construct(P{Float64})
-  weights_positive = copy(M.Grid.baseline_weights_positive)
-  weights_negative = copy(M.Grid.baseline_weights_negative)
+  g = M.Grid[size(U, 2)]
 
-  for i ∈ eachindex(weights_positive)
-    weights_positive[i] += negative_log_density!(q, M.Grid.nodes_positive[:,i], M.Θ, data, Θ_hat, L)
+  @inbounds for i ∈ eachindex(g.density)
+    g.density[i] = g.baseline_weights[i] + negative_log_density!(q, ( @views g.nodes[:,i] ), M.Θ, data, Θ_hat, U)
   end
-  for i ∈ eachindex(weights_negative)
-    weights_negative[i] += negative_log_density!(q, M.Grid.nodes_negative[:,i], M.Θ, data, Θ_hat, L)
-  end
-  min_density = min(minimum(weights_positive), minimum(weights_negative))
-  weights_positive .= exp.(min_density .- weights_positive) .* M.Grid.weights_positive
-  weights_negative .= exp.(min_density .- weights_negative) .* M.Grid.weights_negative
-  weights_positive .*= M.Grid.weight_sum[1] ./ sum(weights_positive)
-  weights_negative .*= M.Grid.weight_sum[2] ./ sum(weights_negative)
 
-  JointPosterior{p, q, P}(M, weights_positive, weights_negative, Θ_hat, L)
+  g.density .= exp.(minimum(g.density) .- g.density) .* g.weights
+  g.density ./= sum(g.density)
+
+  JointPosterior{p, q, P}(M, g, Θ_hat, U)
 
 end

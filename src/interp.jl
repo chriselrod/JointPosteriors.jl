@@ -1,48 +1,20 @@
 abstract type InterpolateIntegral end
 
-struct weights_values
-  weights_positive::Vector{Float64}
-  weights_negative::Vector{Float64}
-  values_positive::Vector{Float64}
-  values_negative::Vector{Float64}
+struct weights_values <: AbstractArray{Float64,1}
+  weights::Vector{Float64}
+  values::Vector{Float64}
 end
 
-function simultaneous_sort(s, x)
-  sort_indices = sortperm(s)
-  s[sort_indices], x[sort_indices]
+function simultaneous_sort!(wv::weights_values)
+  si = sortperm(wv.values)
+  wv.values .= wv.values[si]
+  wv.weights .= wv.weights[si]
+  wv
 end
 
-
-function generate_value_and_weight_nodes(values::Array{Float64,1}, weights::Array{Float64,1})
-  sort_indices = sortperm(values)
-  value_nodes = Array{Float64,1}(length(values)+1)
-  weight_nodes = Array{Float64,1}(length(values)+1)
-  weight_nodes[1] = 0.0
-  value_nodes[1] = 2values[sort_indices[1]] - values[sort_indices[2]]
-  value_nodes[end] = 2values[sort_indices[end]] - values[sort_indices[end-1]]
-  for i ∈ 2:length(values)
-    value_nodes[i] = (values[sort_indices[i]] + values[sort_indices[i-1]]) / 2
-    weight_nodes[i] = weight_nodes[i-1] + weights[sort_indices[i-1]]
-  end
-  weight_nodes[end] = weight_nodes[end-1] + weights[sort_indices[end]]
-  value_nodes, weight_nodes
-end
-
-
-function interpolate_weights(values::Vector, weights::Vector)
-  v, w = generate_value_and_weight_nodes(values, weights)
-  interpolate((v,), w, Gridded(Linear()))
-end
-function interpolate_flat(values::Vector, weights::Vector)
-  v, w = simultaneous_sort(values, weights)
-  interpolate((v,), cumsum(w), Gridded(Constant()))
-end
-struct interpolate_weight_values
-  positive::Interpolations.GriddedInterpolation
-  negative::Interpolations.GriddedInterpolation
-end
 function interpolate_weight_values(wv::weights_values)
-  interpolate_weight_values(interpolate_flat(wv.values_positive, wv.weights_positive), interpolate_flat(wv.values_negative, wv.weights_negative))
+  simultaneous_sort!(wv)
+  interpolate((wv.values,), cumsum(wv.weights), Gridded(Linear()))
 end
 
 
@@ -91,33 +63,33 @@ function polynomial_interpolation(value_nodes::Array{Float64,2}, weight_nodes::V
   polynomial_interpolation{d}(value_nodes, weight_nodes, n, diag, off_diag)
 end
 
-function polynomial_interpolation(range::StepRangeLen, itp::interpolate_weight_values, d::Type{<:RealDist}, n::Int = length(range))
+function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.GriddedInterpolation, d::Type{<:RealDist}, n::Int = length(range))
   weight_nodes = Vector{Float64}(n)
   value_nodes = ones(length(range),4)
-  for (i,v) ∈ enumerate(range)
-    weight_nodes[i] = itp.positive[v] + itp.negative[v]
+  @inbounds for (i,v) ∈ enumerate(range)
+    weight_nodes[i] = itp[v]
     value_nodes[i,2] = v
     value_nodes[i,3] = v^2
     value_nodes[i,4] = v^3
   end
   polynomial_interpolation(value_nodes, weight_nodes, d, n)
 end
-function polynomial_interpolation(range::StepRangeLen, itp::interpolate_weight_values, d::Type{<:PositiveDist}, n::Int = length(range))
+function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.GriddedInterpolation, d::Type{<:PositiveDist}, n::Int = length(range))
   weight_nodes = Vector{Float64}(n)
   value_nodes = ones(length(range),4)
-  for (i,v) ∈ enumerate(range)
-    weight_nodes[i] = itp.positive[v] + itp.negative[v]
+  @inbounds for (i,v) ∈ enumerate(range)
+    weight_nodes[i] = itp[v]
     value_nodes[i,2] = log(v)
     value_nodes[i,3] = value_nodes[i,2]^2
     value_nodes[i,4] = value_nodes[i,2]^3
   end
   polynomial_interpolation(value_nodes, weight_nodes, d, n)
 end
-function polynomial_interpolation(range::StepRangeLen, itp::interpolate_weight_values, d::Type{Beta}, n::Int = length(range))
+function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.GriddedInterpolation, d::Type{Beta}, n::Int = length(range))
   weight_nodes = Vector{Float64}(n)
   value_nodes = ones(length(range),4)
-  for (i,v) ∈ enumerate(range)
-    weight_nodes[i] = itp.positive[v] + itp.negative[v]
+  @inbounds for (i,v) ∈ enumerate(range)
+    weight_nodes[i] = itp[v]
     value_nodes[i,2] = LogDensities.logit(v)
     value_nodes[i,3] = value_nodes[i,2]^2
     value_nodes[i,4] = value_nodes[i,2]^3
@@ -125,8 +97,8 @@ function polynomial_interpolation(range::StepRangeLen, itp::interpolate_weight_v
   polynomial_interpolation(value_nodes, weight_nodes, d, n)
 end
 
-function polynomial_interpolation(itp::interpolate_weight_values, d::Type{<:ContinuousUnivariateDistribution} = Normal, n::Int = 100)
-    polynomial_interpolation(linspace(itp.positive.knots[1][1], itp.positive.knots[1][end], n), itp, d, n)
+function polynomial_interpolation(itp::Interpolations.GriddedInterpolation, d::Type{<:ContinuousUnivariateDistribution} = Normal, n::Int = 100)
+    polynomial_interpolation(linspace(itp.knots[1][1], itp.knots[1][end], n), itp, d, n)
 end
 Base.length(::polynomial_interpolation{<: OneParam}) = 7
 Base.length(::polynomial_interpolation{<: TwoParam}) = 8
@@ -208,7 +180,7 @@ function GLM(Θ::Vector{<:Real}, d::Type{Beta})
   GLM(construct_β(Θ), Beta(exp(Θ[5]), exp(Θ[6])))
 end
 
-function GLM(itp::interpolate_weight_values, d::Type{<:ContinuousUnivariateDistribution})
+function GLM(itp::Interpolations.GriddedInterpolation, d::Type{<:ContinuousUnivariateDistribution})
   poly = polynomial_interpolation(itp, d)
   Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> cdf_error(x, poly), zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
   GLM(Θ_hat, d)
@@ -220,16 +192,16 @@ end
 
 function GLM(wv::weights_values)
   itp = interpolate_weight_values(wv)
-  if min(itp.positive.knots[1][1], itp.negative.knots[1][1]) < 0
+  if min(itp.knots[1][1], itp.knots[1][1]) < 0
     return GLM(itp, Normal)
-  elseif max(itp.positive.knots[1][end], itp.negative.knots[1][end]) > 1
+  elseif max(itp.knots[1][end], itp.knots[1][end]) > 1
     return GLM(itp, Gamma)
   else
     return GLM(itp, Beta)
   end
 end
 function poly(β::Vector, x::Real)
-  β[1] + β[2]*x + β[3]*x^2 + β[4]*x^3
+  @inbounds β[1] + β[2]*x + β[3]*x^2 + β[4]*x^3
 end
 function Distributions.cdf{T <: RealDist}(itp::GLM{T}, x::Real)
   Distributions.cdf(itp.d, poly(itp.β, x))
@@ -316,11 +288,11 @@ struct Grid <: InterpolateIntegral
 end
 function Grid(wv::weights_values)
   itp = interpolate_weight_values(wv)
-  value_nodes = [linspace(itp.positive.knots[1][1], itp.positive.knots[1][end], 100)...]
+  value_nodes = [linspace(itp.knots[1][1], itp.knots[1][end], 100)...]
   weight_nodes = zeros(100)
   weight_nodes[end] = 1
   for i ∈ 2:99
-    weight_nodes[i] = itp.positive[value_nodes[i]] + itp.negative[value_nodes[i]]
+    weight_nodes[i] = itp[value_nodes[i]]
   end
   Grid(weight_nodes, value_nodes)
 end

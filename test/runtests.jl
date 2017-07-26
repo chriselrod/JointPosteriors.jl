@@ -35,11 +35,41 @@ data = BinaryClassificationData(X, freq, 9, βm = 2, βp = 2);
 
 bc_model_gk = Model(BinaryClassification)
 jp_gk = JointPosterior(bc_model_gk, data)
+m_gk_grid = marginal(jp_gk, x -> x.p[1])
+m_gk_normal = marginal(jp_gk, x -> x.p[1], Normal)
 
 bc_model_kp = Model(BinaryClassification, q = SparseQuadratureGrids.KronrodPatterson)
 jp_kp = JointPosterior(bc_model_kp, data)
+m_kp_grid = marginal(jp_kp, x -> x.p[1])
+m_kp_normal = marginal(jp_kp, x -> x.p[1], Normal)
 
 @testset begin
-  @test isapprox(marginal(jp_gk, x -> x.p[1]).μ, 0.5504, rtol = 2e-4)
-  @test isapprox(marginal(jp_kp, x -> x.p[1]).μ, 0.5504, rtol = 2e-4)
+  @testset begin
+    @test isapprox(m_gk_grid.μ, 0.5503061164407677, rtol = 2e-8)
+    @test isapprox(m_gk_grid.σ, 0.07661935890124291, rtol = 2e-8)
+    @test isapprox(quantile(m_gk_normal, .025), 0.4008858361449898, rtol = 2e-8)
+    @test isapprox(quantile(m_gk_normal, .25), 0.4971142935368797, rtol = 2e-8)
+    @test isapprox(quantile(m_gk_normal, .5), 0.5501321112304882, rtol = 2e-8)
+    @test isapprox(quantile(m_gk_normal, .75), 0.6028233244941255, rtol = 2e-8)
+    @test isapprox(quantile(m_gk_normal, .975), 0.6970692930288663, rtol = 2e-8)
+    @test isapprox(quantile(m_gk_grid, .025), 0.39011219404999875, rtol = 2e-6)
+    @test isapprox(quantile(m_gk_grid, .25), 0.4993133361132443, rtol = 2e-6)
+    @test isapprox(quantile(m_gk_grid, .5), 0.5473127946502362, rtol = 2e-6)
+    @test isapprox(quantile(m_gk_grid, .75), 0.6035318273300528, rtol = 2e-6)
+    @test isapprox(quantile(m_gk_grid, .975), 0.7047551520876153, rtol = 2e-6)
+  end
+  @testset begin
+    @test isapprox(m_kp_grid.μ, 0.5504463054796331, rtol = 2e-8)
+    @test isapprox(m_kp_grid.σ, 0.07777781894846478, rtol = 2e-8)
+    @test isapprox(quantile(m_kp_normal, .025), 0.39106678659093086, rtol = 2e-8)
+    @test isapprox(quantile(m_kp_normal, .25), 0.49481672560058265, rtol = 2e-8)
+    @test isapprox(quantile(m_kp_normal, .5), 0.5488704022945908, rtol = 2e-8)
+    @test isapprox(quantile(m_kp_normal, .75), 0.6015558314490006, rtol = 2e-8)
+    @test isapprox(quantile(m_kp_normal, .975), 0.6960897346671988, rtol = 2e-8)
+    @test isapprox(quantile(m_kp_grid, .025), 0.3931513592679271, rtol = 2e-6)
+    @test isapprox(quantile(m_kp_grid, .25), 0.49486042524846835, rtol = 2e-6)
+    @test isapprox(quantile(m_kp_grid, .5), 0.549428799113842, rtol = 2e-6)
+    @test isapprox(quantile(m_kp_grid, .75), 0.6024636935286022, rtol = 2e-6)
+    @test isapprox(quantile(m_kp_grid, .975), 0.6960955354476359, rtol = 2e-6)
+  end
 end
