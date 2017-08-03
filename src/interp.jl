@@ -109,7 +109,7 @@ function update_β!(β::Vector{<:Real}, Θ::Vector{<:Real})
   β[4] = exp(Θ[4])
   β[3] = √(3β[2]*β[4])*(2/(1+exp(-Θ[3]))-1)
 end
-function construct_β{T<:Real}(Θ::Vector{T})
+function construct_β(Θ::Vector{T}) where {T<:Real}
   β = Vector{T}(4)
   β[1] = Θ[1]
   β[2] = exp(Θ[2])
@@ -137,19 +137,19 @@ function cdf_error(Θ::Vector{<:Real}, poly::polynomial_interpolation)
 end
 
 
-function predict_cdf{T <: OneParamReal}(Θ::Vector{<:Real}, poly::polynomial_interpolation{T})
+function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{T}) where {T <: OneParamReal}
   Distributions.cdf(T(exp(Θ[5])), poly.X * construct_β(Θ))
 end
-function predict_cdf{T <: OneParamRealScale}(Θ::Vector{<:Real}, poly::polynomial_interpolation{T})
+function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{T}) where {T <: OneParamRealScale}
   Distributions.cdf(T(0, exp(Θ[5])), poly.X * construct_β(Θ))
 end
-function predict_cdf{T <: OneParamPositive}(Θ::Vector{<:Real}, poly::polynomial_interpolation{T})
+function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{T}) where {T <: OneParamPositive}
   Distributions.cdf(T(exp(Θ[5])), exp.(poly.X * construct_β(Θ)))
 end
-function predict_cdf{T <: OneParamPositiveScale}(Θ::Vector{<:Real}, poly::polynomial_interpolation{T})
+function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{T}) where {T <: OneParamPositiveScale}
   Distributions.cdf(T(0, exp(Θ[5])), exp.(poly.X * construct_β(Θ)))
 end
-function predict_cdf{T <: TwoParamPositive}(Θ::Vector{<:Real}, poly::polynomial_interpolation{T})
+function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{T}) where {T <: TwoParamPositive}
   Distributions.cdf(T(exp(Θ[5]), exp(Θ[6])), exp.(poly.X * construct_β(Θ)))
 end
 function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{Beta})
@@ -161,19 +161,19 @@ struct GLM{T <: ContinuousUnivariateDistribution} <: InterpolateIntegral
   β::Vector{Float64}
   d::T
 end
-function GLM{T <: OneParamReal}(Θ::Vector{<:Real}, d::Type{T})
+function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamReal}
   GLM(construct_β(Θ), T(exp(Θ[5])))
 end
-function GLM{T <: OneParamRealScale}(Θ::Vector{<:Real}, d::Type{T})
+function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamRealScale}
   GLM(construct_β(Θ), T(0, exp(Θ[5])))
 end
-function GLM{T <: OneParamPositive}(Θ::Vector{<:Real}, d::Type{T})
+function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamPositive}
   GLM(construct_β(Θ), T(exp(Θ[5])))
 end
-function GLM{T <: OneParamPositiveScale}(Θ::Vector{<:Real}, d::Type{T})
+function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamPositiveScale}
   GLM(construct_β(Θ), T(0, exp(Θ[5])))
 end
-function GLM{T <: TwoParamPositive}(Θ::Vector{<:Real}, d::Type{T})
+function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: TwoParamPositive}
   GLM(construct_β(Θ), T(exp(Θ[5]), exp(Θ[6])))
 end
 function GLM(Θ::Vector{<:Real}, d::Type{Beta})
@@ -203,10 +203,10 @@ end
 function poly(β::Vector, x::Real)
   @inbounds β[1] + β[2]*x + β[3]*x^2 + β[4]*x^3
 end
-function Distributions.cdf{T <: RealDist}(itp::GLM{T}, x::Real)
+function Distributions.cdf(itp::GLM{T}, x::Real) where {T <: RealDist}
   Distributions.cdf(itp.d, poly(itp.β, x))
 end
-function Distributions.cdf{T <: PositiveDist}(itp::GLM{T}, x::Real)
+function Distributions.cdf(itp::GLM{T}, x::Real) where {T <: PositiveDist}
   Distributions.cdf(itp.d, exp(poly(itp.β, log(x))))
 end
 function Distributions.cdf(itp::GLM{Beta}, x::Real)
@@ -256,7 +256,7 @@ function find_root(β::Vector{Float64}, δ::Float64)
   end
 end
 
-function Base.quantile{T <: RealDist}(itp::GLM{T}, x::Real)
+function Base.quantile(itp::GLM{T}, x::Real) where {T <: RealDist}
   if x <= 0
     return - Inf
   elseif x >= 1
@@ -264,7 +264,7 @@ function Base.quantile{T <: RealDist}(itp::GLM{T}, x::Real)
   end
   find_root(itp.β, Base.quantile(itp.d, x))
 end
-function Base.quantile{T <: PositiveDist}(itp::GLM{T}, x::Real)
+function Base.quantile(itp::GLM{T}, x::Real) where {T <: PositiveDist}
   if x <= 0
     return 0.0
   elseif x >= 1
