@@ -57,7 +57,7 @@ function inv_chol!(U, H)
 end
 function reduce_dimensions!(M::Model, H::Array{Float64,2})
   ef = eigfact!(Symmetric(H))
-  v0 = ef.values .> 1e-13
+  v0 = ef.values .> 1e-11
   r = sum(v0)
   out = SparseQuadratureGrids.mats(M.Grid, r)
   g0 = 0
