@@ -182,7 +182,8 @@ end
 
 function GLM(itp::Interpolations.GriddedInterpolation, d::Type{<:ContinuousUnivariateDistribution})
   poly = polynomial_interpolation(itp, d)
-  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> cdf_error(x, poly), zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
+  cdf_err(x::Vector) = cdf_error(x, poly)
+  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(cdf_err, zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
   GLM(Θ_hat, d)
 end
 

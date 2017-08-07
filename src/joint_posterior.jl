@@ -4,8 +4,8 @@ struct JointPosterior{P}
   Θ_hat::Vector{Float64}
   U::Array{Float64,2}
 end
-struct JointPosteriorConstrained{p, q, P}
-  M::Model{p, q, P}
+struct JointPosteriorRaw{q, P}
+  M::Model{q, P}
   grid::FlattenedGrid{q}
   Θ_hat::Vector{Float64}
   U::Array{Float64,2}
@@ -88,17 +88,16 @@ function negative_log_density!(::Type{KronrodPatterson}, x::AbstractArray{<:Real
   update!(Θ)
   negative_log_density!(Θ, data) - l_jac
 end
-function negative_log_density_cache!(::Type{GenzKeister}, x::AbstractArray{<:Real,1}, Θ::parameters, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
-  Θ.x .= Θ_hat .+ U * x
-  update!(Θ)
+function negative_log_density_cache!(::Type{GenzKeister}, x::AbstractArray{<:Real,1}, ::Type{P}, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
+  Θ = construct(P{Float64}, Θ_hat .+ U * x)
+#  update!(Θ)
   negative_log_density!(Θ, data), Θ
 end
 
-function negative_log_density_cache!(::Type{KronrodPatterson}, x::AbstractArray{<:Real,1}, Θ::parameters, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
-  l_jac = sigmoid_jacobian(x)
-  Θ.x .= Θ_hat .+ U * sigmoid.(x)
-  update!(Θ)
-  negative_log_density!(Θ, data) - l_jac, Θ
+function negative_log_density_cache!(::Type{KronrodPatterson}, x::AbstractArray{<:Real,1}, ::Type{P}, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
+  Θ = construct(P{Float64}, Θ_hat .+ U * sigmoid.(x))
+#  update!(Θ)
+  negative_log_density!(Θ, data) - sigmoid_jacobian(x), Θ
 end
 
 function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, U::AbstractArray{<:Real,2}, ::Type{KronrodPatterson})
@@ -114,72 +113,35 @@ function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, 
 end
 
 sample_size_order(::Data) = 1
+
 function negative_log_density{T, P <: parameters}(Θ::Vector{T}, ::Type{P}, data::Data)
   param = construct(P{T}, Θ)
   nld = -log_jacobian!(param)
   nld - Main.log_density(param, data)
 end
-function evaluate(M::Model{p, q, P, aPrioriBuild{q}}, Θ_hat::Vector{Float64}, U::Array{Float64,2}, data::Data) where {p,q,P}
 
-end
+function fit( M::Model{q, P, B} , data::Data , n::Int = 10_000 ) where {q <: QuadratureRule, P <: parameters, B}
 
-function evaluate(M::Model{p, q, P, AdaptiveBuild{q}}, Θ_hat::Vector{Float64}, U::Array{Float64,2}, data::Data) where {p,q,P}
-  ab = AdaptiveBuilderCache(p, x -> negative_log_density_cache!(q, x, Θ::parameters, data, Θ_hat, U) , P, n = 10_000, q, l = 6)
-end
-#_constrained return constrained grid.
-function evaluate_constrained(M::Model{p, q, P, aPrioriBuild{q}}, Θ_hat::Vector{Float64}, U::Array{Float64,2}, data::Data) where {p,q,P}
+  nld(x::Vector) = negative_log_density(x, M.UA, data)
 
-end
+  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(nld, M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
+  U = deduce_scale!(M, 2hessian(nld, Θ_hat))
 
-function evaluate_constrained(M::Model{p, q, P, AdaptiveBuild{q}}, Θ_hat::Vector{Float64}, U::Array{Float64,2}, data::Data) where {p,q,P}
-  ab = AdaptiveBuilder(p, x -> negative_log_density!(q, x, M.Θ, data, Θ_hat, U), n = 10_000, q, l::Int = 6)
-end
+  snld(x::AbstractArray) = negative_log_density_cache!(q, x, P, data, Θ_hat, U)
 
-function get_grid()
+  density, Θ = get!(M, (size(U,2),sample_size_order(data),n), snld)
 
-end
-
-function get_grid_constrained()
-
-end
-
-
-function JointPosterior( M::Model{p, q, P} , data::Data ) where {p, q <: QuadratureRule, P <: parameters}
-
-  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> negative_log_density(x, M.UA, data), M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
-  U = deduce_scale!(M, 2hessian(x -> negative_log_density(x, M.UA, data), Θ_hat))
-
-
-  g = M.Grid[size(U, 2), sample_size_order(data)]
-
-  @inbounds for i ∈ eachindex(g.density)
-    g.density[i] = g.baseline_weights[i] + negative_log_density!(q, ( @views g.nodes[:,i] ), M.Θ, data, Θ_hat, U)
-  end
-
-  g.density .= exp.(minimum(g.density) .- g.density) .* g.weights
-  g.density ./= sum(g.density)
-
-  JointPosterior{p, q, P}(M, g, Θ_hat, U)
-
-  Θ, density = evaluate(M, Θ_hat, U, data)
   JointPosterior{P}(Θ, density, Θ_hat, U)
 end
-function JointPosteriorConstrained( M::Model{p, q, P} , data::Data, build  ) where {p, q <: QuadratureRule, P <: parameters}
+function fit( M::Model{q, P, B} , data::Data, seq::Vector{Int} = default(q) ) where {q <: QuadratureRule, P <: parameters, B <: RawBuild}
 
-  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(x -> negative_log_density(x, M.UA, data), M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
+  nld(x::Vector) = negative_log_density(x, M.UA, data)
+
+  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(nld, M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
   U = deduce_scale!(M, 2hessian(x -> negative_log_density(x, M.UA, data), Θ_hat))
 
-  g = M.Grid[size(U, 2)]
+  snld(x::AbstractArray) = negative_log_density!(q, x, P, data, Θ_hat, U)
 
-  @inbounds for i ∈ eachindex(g.density)
-    g.density[i] = g.baseline_weights[i] + negative_log_density!(q, ( @views g.nodes[:,i] ), M.Θ, data, Θ_hat, U)
-  end
-
-  g.density .= exp.(minimum(g.density) .- g.density) .* g.weights
-  g.density ./= sum(g.density)
-
-
-
-  JointPosterior{p, q, P}(M, g, Θ_hat, U)
+  JointPosteriorRaw{q, P}(M, return_grid!(M, (size(U,2), seq), snld), Θ_hat, U)
 
 end
