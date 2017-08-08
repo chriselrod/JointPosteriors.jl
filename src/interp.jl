@@ -43,7 +43,7 @@ PositiveDist = Union{OneParamPositive, OneParamPositiveScale, TwoParamPositive}
 OneParam = Union{OneParamReal, OneParamRealScale, OneParamPositive, OneParamPositiveScale}
 TwoParam = Union{TwoParamPositive, Beta}
 
-function polynomial_interpolation(value_nodes::Array{Float64,2}, weight_nodes::Vector{Float64}, d::Type{<:ContinuousUnivariateDistribution}, n::Int)
+function polynomial_interpolation(value_nodes::Array{Float64,2}, weight_nodes::Vector{Float64}, ::Type{d}, n::Int) where {d <: ContinuousUnivariateDistribution}
   diag = Vector{Float64}(n)
   off_diag = Vector{Float64}(n-1)
   diag[1] = diag[end] = 3.0
@@ -65,7 +65,7 @@ end
 
 function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.GriddedInterpolation, d::Type{<:RealDist}, n::Int = length(range))
   weight_nodes = Vector{Float64}(n)
-  value_nodes = ones(length(range),4)
+  value_nodes = ones(n,4)
   @inbounds for (i,v) ∈ enumerate(range)
     weight_nodes[i] = itp[v]
     value_nodes[i,2] = v
@@ -76,7 +76,7 @@ function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.Gridd
 end
 function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.GriddedInterpolation, d::Type{<:PositiveDist}, n::Int = length(range))
   weight_nodes = Vector{Float64}(n)
-  value_nodes = ones(length(range),4)
+  value_nodes = ones(n,4)
   @inbounds for (i,v) ∈ enumerate(range)
     weight_nodes[i] = itp[v]
     value_nodes[i,2] = log(v)
@@ -87,7 +87,7 @@ function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.Gridd
 end
 function polynomial_interpolation(range::StepRangeLen, itp::Interpolations.GriddedInterpolation, d::Type{Beta}, n::Int = length(range))
   weight_nodes = Vector{Float64}(n)
-  value_nodes = ones(length(range),4)
+  value_nodes = ones(n,4)
   @inbounds for (i,v) ∈ enumerate(range)
     weight_nodes[i] = itp[v]
     value_nodes[i,2] = LogDensities.logit(v)
@@ -104,10 +104,12 @@ Base.length(::polynomial_interpolation{<: OneParam}) = 7
 Base.length(::polynomial_interpolation{<: TwoParam}) = 8
 
 function update_β!(β::Vector{<:Real}, Θ::Vector{<:Real})
-  β[1] = Θ[1]
-  β[2] = exp(Θ[2])
-  β[4] = exp(Θ[4])
-  β[3] = √(3β[2]*β[4])*(2/(1+exp(-Θ[3]))-1)
+  @inbounds begin
+    β[1] = Θ[1]
+    β[2] = exp(Θ[2])
+    β[4] = exp(Θ[4])
+    β[3] = √(3β[2]*β[4])*(2/(1+exp(-Θ[3]))-1)
+  end
 end
 function construct_β(Θ::Vector{T}) where {T<:Real}
   β = Vector{T}(4)
@@ -161,33 +163,33 @@ struct GLM{T <: ContinuousUnivariateDistribution} <: InterpolateIntegral
   β::Vector{Float64}
   d::T
 end
-function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamReal}
+function GLM(Θ::Vector{<:Real}, ::Type{T}) where {T <: OneParamReal}
   GLM(construct_β(Θ), T(exp(Θ[5])))
 end
-function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamRealScale}
+function GLM(Θ::Vector{<:Real}, ::Type{T}) where {T <: OneParamRealScale}
   GLM(construct_β(Θ), T(0, exp(Θ[5])))
 end
-function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamPositive}
+function GLM(Θ::Vector{<:Real}, ::Type{T}) where {T <: OneParamPositive}
   GLM(construct_β(Θ), T(exp(Θ[5])))
 end
-function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: OneParamPositiveScale}
+function GLM(Θ::Vector{<:Real}, ::Type{T}) where {T <: OneParamPositiveScale}
   GLM(construct_β(Θ), T(0, exp(Θ[5])))
 end
-function GLM(Θ::Vector{<:Real}, d::Type{T}) where {T <: TwoParamPositive}
+function GLM(Θ::Vector{<:Real}, ::Type{T}) where {T <: TwoParamPositive}
   GLM(construct_β(Θ), T(exp(Θ[5]), exp(Θ[6])))
 end
-function GLM(Θ::Vector{<:Real}, d::Type{Beta})
+function GLM(Θ::Vector{<:Real}, ::Type{Beta})
   GLM(construct_β(Θ), Beta(exp(Θ[5]), exp(Θ[6])))
 end
 
-function GLM(itp::Interpolations.GriddedInterpolation, d::Type{<:ContinuousUnivariateDistribution})
+function GLM(itp::Interpolations.GriddedInterpolation, ::Type{d}) where {d <: <:ContinuousUnivariateDistribution}
   poly = polynomial_interpolation(itp, d)
   cdf_err(x::Vector) = cdf_error(x, poly)
   Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(cdf_err, zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
   GLM(Θ_hat, d)
 end
 
-function GLM(wv::weights_values, d::Type{<:ContinuousUnivariateDistribution})
+function GLM(wv::weights_values, ::Type{d}) where {d <: <:ContinuousUnivariateDistribution}
   GLM(interpolate_weight_values(wv), d)
 end
 

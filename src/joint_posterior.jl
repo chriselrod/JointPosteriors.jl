@@ -4,9 +4,9 @@ struct JointPosterior{P}
   Θ_hat::Vector{Float64}
   U::Array{Float64,2}
 end
-struct JointPosteriorRaw{q, P}
-  M::Model{q, P}
-  grid::FlattenedGrid{q}
+struct JointPosteriorRaw{p, q, P}
+  Θ::P
+  grid::FlatGrid{p, q}
   Θ_hat::Vector{Float64}
   U::Array{Float64,2}
 end
@@ -89,13 +89,13 @@ function negative_log_density!(::Type{KronrodPatterson}, x::AbstractArray{<:Real
   negative_log_density!(Θ, data) - l_jac
 end
 function negative_log_density_cache!(::Type{GenzKeister}, x::AbstractArray{<:Real,1}, ::Type{P}, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
-  Θ = construct(P{Float64}, Θ_hat .+ U * x)
+  Θ = construct(P, Θ_hat .+ U * x)
 #  update!(Θ)
   negative_log_density!(Θ, data), Θ
 end
 
 function negative_log_density_cache!(::Type{KronrodPatterson}, x::AbstractArray{<:Real,1}, ::Type{P}, data::Data, Θ_hat::Vector, U::AbstractArray{<:Real,2})
-  Θ = construct(P{Float64}, Θ_hat .+ U * sigmoid.(x))
+  Θ = construct(P, Θ_hat .+ U * sigmoid.(x))
 #  update!(Θ)
   negative_log_density!(Θ, data) - sigmoid_jacobian(x), Θ
 end
@@ -112,7 +112,7 @@ function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, 
   Θ
 end
 
-sample_size_order(::Data) = 1
+sample_size_order(::Any) = 1
 
 function negative_log_density{T, P <: parameters}(Θ::Vector{T}, ::Type{P}, data::Data)
   param = construct(P{T}, Θ)
@@ -120,28 +120,49 @@ function negative_log_density{T, P <: parameters}(Θ::Vector{T}, ::Type{P}, data
   nld - Main.log_density(param, data)
 end
 
-function fit( M::Model{q, P, B} , data::Data , n::Int = 10_000 ) where {q <: QuadratureRule, P <: parameters, B}
+index_gen(U::Array{Float64,2},::Type{<:DynamicRank}, data, n::Int) = size(U,2),sample_size_order(data), n
+index_gen(U::Array{Float64,2},::Type{<:StaticRank}, data, n::Int) = sample_size_order(data), n
+function fit( M::Model{G, PF, P, R}, data, n::Int = 10_000 ) where {q, G <: GridVessel{q}, PF <: parameters, P <: parameters, R <: ModelRank}
 
-  nld(x::Vector) = negative_log_density(x, M.UA, data)
+  nld(x::Vector) = negative_log_density(x, P, data)
 
   Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(nld, M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
   U = deduce_scale!(M, 2hessian(nld, Θ_hat))
 
-  snld(x::AbstractArray) = negative_log_density_cache!(q, x, P, data, Θ_hat, U)
+  snld(x::AbstractArray) = negative_log_density_cache!(q, x, PF, data, Θ_hat, U)
 
-  density, Θ = get!(M, (size(U,2),sample_size_order(data),n), snld)
+  density, Θ = get!(M, index_gen(U, data, n), snld)
 
   JointPosterior{P}(Θ, density, Θ_hat, U)
 end
-function fit( M::Model{q, P, B} , data::Data, seq::Vector{Int} = default(q) ) where {q <: QuadratureRule, P <: parameters, B <: RawBuild}
-
-  nld(x::Vector) = negative_log_density(x, M.UA, data)
+function rawFit( M::Model{G, PF, P, R}, data, seq::Vector{Int} = SparseQuadratureGrids.default(q) ) where {q, p, G <: GridVessel{q}, PF <: parameters, P <: parameters, R <: StaticRank{p}}
+  nld(x::Vector) = negative_log_density(x, P, data)
 
   Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(nld, M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
-  U = deduce_scale!(M, 2hessian(x -> negative_log_density(x, M.UA, data), Θ_hat))
+  U = deduce_scale!(M, 2hessian(nld, Θ_hat))
 
-  snld(x::AbstractArray) = negative_log_density!(q, x, P, data, Θ_hat, U)
+  snld(x::AbstractArray) = negative_log_density!(q, x, M.Θ, data, Θ_hat, U)
 
-  JointPosteriorRaw{q, P}(M, return_grid!(M, (size(U,2), seq), snld), Θ_hat, U)
+  JointPosteriorRaw{p, q, P}(M.Θ, return_grid!(M, (sample_size_order(data), seq), snld), Θ_hat, U)
+end
+function rawFit( M::Model{G, PF, P, R}, data, seq::Vector{Int} = SparseQuadratureGrids.default(q) ) where {q, G <: GridVessel{q}, PF <: parameters, P <: parameters, R <: DynamicRank}
+  nld(x::Vector) = negative_log_density(x, P, data)
 
+  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(nld, M.Θ.x, autodiff = :forward), method = NewtonTrustRegion()))#LBFGS; NewtonTrustRegion
+  U = deduce_scale!(M, 2hessian(nld, Θ_hat))
+
+  snld(x::AbstractArray) = negative_log_density!(q, x, M.Θ, data, Θ_hat, U)
+
+  JointPosteriorRaw( M.Θ, return_grid!(M.Θ, (sample_size_order(data), seq), snld), Θ_hat, U )
+end
+JointPosteriorRaw( Θ::P, Grid::FlatGrid{p, q}, Θ_hat::Vector{Float64}, U::Array{Float64,2} ) where {p, q, P} = JointPosteriorRaw{p, q, P}( Θ, Grid, Θ_hat, U )
+
+###These are the two functions called by the JointPosteriors package.
+###The first, return_grid!, is for the raw version, and it simply returns a flattened grid of the raw unconstrained values.
+###The second returns a vector of parameter objects. More costly, but should be cheaper to compute marginals on thanks to cacheing the transformations.
+function return_grid!( M::Model{G, PF, P, R} where {G <: GridVessel, PF <: parameters, P <: parameters, R <: ModelRank}, i, f::Function )
+  haskey(GV.grids, i) ? eval_grid(GV.grids[i], f) : calc_grid!(GV, i, f)
+end
+function get!( M::Model{G, PF, P, R} where {G <: GridVessel, P <: parameters, R <: ModelRank}, i, f::Function ) where {PF <: parameters}
+  haskey(GV.grids, i) ? eval_grid(GV.grids[i], f, PF) : calc_grid!(GV, i, f, PF)
 end

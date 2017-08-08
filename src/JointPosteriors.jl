@@ -12,6 +12,8 @@ import  ForwardDiff: hessian
 import  LogDensities: negative_log_density!
 
 export  JointPosterior,
+        JointPosteriorRaw,
+        fit,
         marginal,
         Data,
         parameters,
