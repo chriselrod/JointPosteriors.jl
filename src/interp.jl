@@ -182,14 +182,14 @@ function GLM(Θ::Vector{<:Real}, ::Type{Beta})
   GLM(construct_β(Θ), Beta(exp(Θ[5]), exp(Θ[6])))
 end
 
-function GLM(itp::Interpolations.GriddedInterpolation, ::Type{d}) where {d <: <:ContinuousUnivariateDistribution}
+function GLM(itp::Interpolations.GriddedInterpolation, ::Type{d}) where {d <: ContinuousUnivariateDistribution}
   poly = polynomial_interpolation(itp, d)
   cdf_err(x::Vector) = cdf_error(x, poly)
   Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(cdf_err, zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
   GLM(Θ_hat, d)
 end
 
-function GLM(wv::weights_values, ::Type{d}) where {d <: <:ContinuousUnivariateDistribution}
+function GLM(wv::weights_values, ::Type{d}) where {d <: ContinuousUnivariateDistribution}
   GLM(interpolate_weight_values(wv), d)
 end
 

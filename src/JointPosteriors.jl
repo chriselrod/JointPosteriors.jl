@@ -35,7 +35,10 @@ export  JointPosterior,
         trace_inverse,
         lpdf_InverseWishart,
         lpdf_normal,
-        Normal
+        Normal,
+        Adaptive,
+        AdaptiveRaw,
+        Smolyak
 
 
 

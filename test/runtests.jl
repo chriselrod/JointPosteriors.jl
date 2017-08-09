@@ -33,18 +33,20 @@ X = [0, 1, 2, 3, 4, 7, 8, 9];
 freq = [10, 2, 2, 1, 2, 3, 2, 16];
 data = BinaryClassificationData(X, freq, 9, βm = 2, βp = 2);
 
-bc_model_gk = Model(BinaryClassification)
-jp_gk = JointPosterior(bc_model_gk, data)
+bc_model_gk = Model(BinaryClassification, AdaptiveRaw{SparseQuadratureGrids.GenzKeister})
+jp_gk = fit(bc_model_gk, data)
 m_gk_grid = marginal(jp_gk, x -> x.p[1])
 m_gk_normal = marginal(jp_gk, x -> x.p[1], Normal)
 
-bc_model_kp = Model(BinaryClassification, q = SparseQuadratureGrids.KronrodPatterson)
-jp_kp = JointPosterior(bc_model_kp, data)
-m_kp_grid = marginal(jp_kp, x -> x.p[1])
-m_kp_normal = marginal(jp_kp, x -> x.p[1], Normal)
+
 
 @testset begin
   @testset begin
+    println("μ:", m_gk_grid.μ)
+    println("σ:", m_gk_grid.σ)
+    println("Normal's quantiles:", quantile.(m_gk_normal, [.025,.25,.5,.75,.975]))
+    println("Grid quantiles:", quantile.(m_gk_normal, [.025,.25,.5,.75,.975]))
+    println("Grid points:", length(m_gk_grid.wv.weights), " ", length(jp_gk.density))
     @test isapprox(m_gk_grid.μ, 0.5503061164407677, rtol = 2e-8)
     @test isapprox(m_gk_grid.σ, 0.07661935890124291, rtol = 2e-8)
     @test isapprox(quantile(m_gk_normal, .025), 0.4008858361449898, rtol = 2e-8)
@@ -58,6 +60,10 @@ m_kp_normal = marginal(jp_kp, x -> x.p[1], Normal)
     @test isapprox(quantile(m_gk_grid, .75), 0.6035318273300528, rtol = 2e-6)
     @test isapprox(quantile(m_gk_grid, .975), 0.7047551520876153, rtol = 2e-6)
   end
+  bc_model_kp = Model(BinaryClassification, LogDensities.Smolyak{SparseQuadratureGrids.KronrodPatterson})
+  jp_kp = fit(bc_model_kp, data)
+  m_kp_grid = marginal(jp_kp, x -> x.p[1])
+  m_kp_normal = marginal(jp_kp, x -> x.p[1], Normal)
   @testset begin
     @test isapprox(m_kp_grid.μ, 0.5504463054796331, rtol = 2e-8)
     @test isapprox(m_kp_grid.σ, 0.07777781894846478, rtol = 2e-8)
