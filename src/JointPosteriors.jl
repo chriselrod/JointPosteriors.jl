@@ -9,14 +9,14 @@ using Distributions
 
 import  Base: show, quantile
 import  ForwardDiff: hessian
-import  LogDensities: negative_log_density!
+import  LogDensities: log_density!
 
 export  JointPosterior,
         JointPosteriorRaw,
         fit,
         marginal,
         Data,
-        parameters,
+        parameter,
         CovarianceMatrix,
         PositiveVector,
         ProbabilityVector,
@@ -24,8 +24,8 @@ export  JointPosterior,
         Simplex,
         Model,
         construct,
-        negative_log_density,
-        negative_log_density!,
+        log_density,
+        log_density!,
         log_jacobian!,
         quad_form,
         inv_det,

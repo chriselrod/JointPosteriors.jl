@@ -8,16 +8,12 @@ struct marginal{T <: InterpolateIntegral}
 end
 
 function weights_values(jp::JointPosterior{P}, f::Function) where {P}
-  values = similar(jp.density) #You're likely to be interested in multiple marginals, hence no saving on allocations.
-  @inbounds for (i, θ) ∈ enumerate(jp.Θ)
-    values[i] = f( θ )
-  end
-  weights_values(copy(jp.density), values)
+  weights_values(copy(jp.density), f.(jp.Θ))
 end
 function weights_values(jp::JointPosteriorRaw{p, q, P}, f::Function) where {p, q, P}
   values = similar(jp.grid.density) #You're likely to be interested in multiple marginals, hence no saving on allocations.
   @inbounds for (i, n) ∈ enumerate( jp.grid.nodes )
-    values[i] = f(transform!(jp.M.Θ, n, jp.Θ_hat, jp.U, q))
+    values[i] = f(transform!(jp.Θ, n, jp.Θ_hat, jp.U, q))
   end
   weights_values(copy(jp.grid.density), values)
 end

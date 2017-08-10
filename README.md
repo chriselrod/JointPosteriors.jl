@@ -11,6 +11,7 @@
 This package implements sparse grid quadrature. I'm working on documentation, organization, tests, and adding more features. And then on getting this package registered. Until then, you can still install via
 ```julia
 julia> Pkg.clone("https://github.com/chriselrod/SparseQuadratureGrids.jl")
+julia> Pkg.clone("https://github.com/chriselrod/ConstrainedParameters.jl")
 julia> Pkg.clone("https://github.com/chriselrod/LogDensities.jl")
 julia> Pkg.clone("https://github.com/chriselrod/JointPosteriors.jl")
 ```
@@ -26,7 +27,7 @@ So, our parameters are a total of three different probabilities. We can specify 
 ```julia
 julia> using JointPosteriors
 
-julia> struct BinaryClassification{T} <: parameters{T,1}
+julia> struct BinaryClassification{T} <: parameter{T}
          x::Vector{T}
          p::ProbabilityVector{3,T}
        end
@@ -40,7 +41,7 @@ julia> bc_model = Model(BinaryClassification);
 
 But before we really do anything with it, we need data nad a log likelihood function. We have a lot of freedom to write these parts however we'd like.
 ```julia
-julia> struct BinaryClassificationData <: Data
+julia> struct BinaryClassificationData
          X::Array{Int64,1}
          freq::Array{Int64,1}
          NmX::Array{Int64, 1}
@@ -58,7 +59,7 @@ The six `Float64`s at the end are parameters for beta priors minus one. I subtra
 Now, all we must do is define the log density function of our model. Putting our priors together, and summing out the unknown true status gives us the following log density:
 
 ```julia
-julia> function log_density(Θ::BinaryClassification, data::Data)
+julia> function log_density(Θ::BinaryClassification, data)
 
          log_π = data.α_m_m1 * log(Θ.p[2]) + data.β_m_m1 * log(1 - Θ.p[2]) + data.α_p_m1*log(Θ.p[3]) + data.β_p_m1 * log(1 - Θ.p[3]) + data.α_τ_m1 * log(Θ.p[1]) + data.β_τ_m1 * log(1 - Θ.p[1])
 
@@ -89,7 +90,7 @@ For our test error rates, we use Beta(1,2) priors, to add a little information t
 Now that we have data, we can calculate the joint posterior:
 
 ```julia
-julia> jp = JointPosterior(bc_model, data);
+julia> jp = fit(bc_model, data);
 ```
 
 But really, we're more interested in the marginals distributions of our three parameters. So, simply define functions finding the marginals we're interested in:
@@ -108,23 +109,23 @@ And compute the marginals!
 ```julia
 julia> marginal_τ = marginal(jp, τ)
 Marginal parameter
-μ: 0.5503617376062098
-σ: 0.07786503681942877
-Quantiles: [0.386014 0.48146 0.550112 0.550112 0.703985]
+μ: 0.5502725869476534
+σ: 0.0762709349616161
+Quantiles: [0.386118 0.499516 0.548795 0.616507 0.702414]
 
 
 julia> marginal_θ_minus = marginal(jp, θ_minus)
 Marginal parameter
-μ: 0.04728258409326777
-σ: 0.015587761958469353
-Quantiles: [0.0220781 0.0353606 0.0451179 0.0573919 0.0809962]
+μ: 0.04738203611660132
+σ: 0.01531598402964027
+Quantiles: [0.023278 0.0351746 0.0470322 0.0572793 0.0794761]
 
 
 julia> marginal_θ_plus = marginal(jp, θ_plus)
 Marginal parameter
-μ: 0.11511160848670976
-σ: 0.025674446894039842
-Quantiles: [0.0713712 0.0951648 0.112278 0.13201 0.170533]
+μ: 0.11528864103463056
+σ: 0.025191873232297594
+Quantiles: [0.0713679 0.0959831 0.115719 0.131082 0.164639]
 ```
 ###### Comparison with Stan
 
@@ -210,7 +211,7 @@ theta_minus 0.025102625 0.04061495 0.0504063 0.06183745 0.08850898
 Note that total CPU time was just under a second. For comparison,
 ```julia
 julia> function run_bc_model()
-         jp = JointPosterior(bc_model, data)
+         jp = fit(bc_model, data)
          marginal_τ = marginal(jp, τ)
          marginal_θ_plus = marginal(jp, θ_plus)
          marginal_θ_minus = marginal(jp, θ_minus)
@@ -220,24 +221,25 @@ run_bc_model (generic function with 1 method)
 julia> using BenchmarkTools
 
 julia> @benchmark run_bc_model()
-BenchmarkTools.Trial: 
-  memory estimate:  2.17 MiB
-  allocs estimate:  39446
+BenchmarkTools.Trial:
+  memory estimate:  894.13 KiB
+  allocs estimate:  15323
   --------------
-  minimum time:     14.038 ms (0.00% GC)
-  median time:      14.403 ms (0.00% GC)
-  mean time:        14.683 ms (1.65% GC)
-  maximum time:     17.794 ms (14.05% GC)
+  minimum time:     3.797 ms (0.00% GC)
+  median time:      3.883 ms (0.00% GC)
+  mean time:        4.053 ms (2.79% GC)
+  maximum time:     9.519 ms (49.10% GC)
   --------------
-  samples:          341
+  samples:          1233
   evals/sample:     1
 
+
 ```
-That is about 0.89 seconds for MCMC vs 15 milliseconds, about 60-fold faster using the default number of iterations (1,000 posterior samples for each of 4 chains).
+That is about 0.89 seconds for MCMC vs 4 milliseconds, more than 200 times faster using the default number of iterations (1,000 posterior samples for each of 4 chains).
 
 #### Example 2: Hello World, Linear Regression!
 
-Bob Carpenter [compared how](http://andrewgelman.com/2017/05/31/compare-stan-pymc3-edward-hello-world/) you implement linear regression in Stan, PyMC3, and Edward. 
+Bob Carpenter [compared how](http://andrewgelman.com/2017/05/31/compare-stan-pymc3-edward-hello-world/) you implement linear regression in Stan, PyMC3, and Edward.
 To specify the model here, we just need:
 ```julia
 julia> struct HiWorld{T} <: parameters{T,1}
@@ -348,7 +350,7 @@ sigma           0.97  1.1e-03   0.071  0.87  0.97   1.1   4000    17105  1.0e+00
 
 Samples were drawn using hmc with nuts.
 For each parameter, N_Eff is a crude measure of effective sample size,
-and R_hat is the potential scale reduction factor on split chains (at 
+and R_hat is the potential scale reduction factor on split chains (at
 convergence, R_hat=1).
 
 julia> describe(hw_stan_res[2])
@@ -386,7 +388,7 @@ run_hw (generic function with 1 method)
 julia> using BenchmarkTools
 
 julia> @benchmark run_hw()
-BenchmarkTools.Trial: 
+BenchmarkTools.Trial:
   memory estimate:  14.75 MiB
   allocs estimate:  152942
   --------------
@@ -578,7 +580,7 @@ run_anova (generic function with 1 method)
 julia> using BenchmarkTools
 
 julia> @benchmark run_anova()
-BenchmarkTools.Trial: 
+BenchmarkTools.Trial:
   memory estimate:  2.94 MiB
   allocs estimate:  48594
   --------------
