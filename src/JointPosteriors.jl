@@ -10,6 +10,7 @@ using Distributions
 import  Base: show, quantile
 import  ForwardDiff: hessian
 import  LogDensities: log_density!
+import  Base.Val
 
 export  JointPosterior,
         JointPosteriorRaw,
