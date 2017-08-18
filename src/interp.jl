@@ -284,7 +284,6 @@ function Base.quantile(itp::GLM{Beta}, x::Real)
   logistic(find_root(itp.β, LogDensities.logit(Base.quantile(itp.d, x))))
 end
 
-
 struct Grid <: InterpolateIntegral
   weights::Array{Float64,1}
   values::Array{Float64,1}

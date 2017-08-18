@@ -1,16 +1,16 @@
 module JointPosteriors
 
-using Optim
-using SparseQuadratureGrids
-using ConstrainedParameters
-using LogDensities
-using Interpolations
-using Distributions
+using   Optim
+using   ForwardDiff
+using   SparseQuadratureGrids
+using   ConstrainedParameters
+using   LogDensities
+using   Interpolations
+using   Distributions
 
-import  Base: show, quantile
-import  ForwardDiff: hessian
-import  LogDensities: log_density!
-import  Base.Val
+import  Base: show, quantile, Val
+import  LogDensities: log_density
+import  SparseQuadratureGrids: SlidingVecFun
 
 export  JointPosterior,
         JointPosteriorRaw,

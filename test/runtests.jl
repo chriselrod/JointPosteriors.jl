@@ -1,11 +1,9 @@
 using JointPosteriors
 using Base.Test
 
-# write your own tests here
-struct BinaryClassification{T} <: parameter{T}
-  x::Vector{T}
-  p::ProbabilityVector{3,T}
-end
+
+BinaryClassification = ( ProbabilityVector(3), )
+
 struct BinaryClassificationData
   X::Array{Int64,1}
   freq::Array{Int64,1}
@@ -18,12 +16,13 @@ struct BinaryClassificationData
   β_τ_m1::Float64
 end
 
-function log_density(Θ::BinaryClassification, data)
-  log_π = data.α_m_m1 * log(Θ.p[2]) + data.β_m_m1 * log(1 - Θ.p[2]) + data.α_p_m1*log(Θ.p[3]) + data.β_p_m1 * log(1 - Θ.p[3]) + data.α_τ_m1 * log(Θ.p[1]) + data.β_τ_m1 * log(1 - Θ.p[1])
-  for i ∈ eachindex(data.X)
-    log_π += data.freq[i] * log( Θ.p[1] * (1 - Θ.p[2])^data.X[i] * Θ.p[2]^(data.NmX[i]) + (1-Θ.p[1]) * Θ.p[3]^data.X[i] * (1-Θ.p[3])^data.NmX[i] )
-  end
-  log_π
+function log_density(data, p)
+    @inbounds log_π = data.α_m_m1 * log(p[2]) + data.β_m_m1 * log(1 - p[2]) + data.α_p_m1*log(p[3]) + data.β_p_m1 * log(1 - p[3]) + data.α_τ_m1 * log(p[1]) + data.β_τ_m1 * log(1 - p[1])
+
+    @inbounds @simd for i ∈ eachindex(data.X)
+        log_π += data.freq[i] * log( p[1] * (1 - p[2])^data.X[i] * p[2]^(data.NmX[i]) + (1-p[1]) * p[3]^data.X[i] * (1-p[3])^data.NmX[i] )
+    end
+    log_π
 end
 
 function BinaryClassificationData(X::Array{Int, 1}, freq::Array{Int,1}, n::Int; αm::Real = 1, βm::Real = 1, αp::Real = 1, βp::Real = 1, ατ::Real = 1, βτ::Real = 1)
@@ -33,50 +32,34 @@ X = [0, 1, 2, 3, 4, 7, 8, 9];
 freq = [10, 2, 2, 1, 2, 3, 2, 16];
 data = BinaryClassificationData(X, freq, 9, βm = 2, βp = 2);
 
-bc_model_gk = Model(BinaryClassification, AdaptiveRaw{SparseQuadratureGrids.GenzKeister})
-jp_gk = fit(bc_model_gk, data)
-m_gk_grid = marginal(jp_gk, x -> x.p[1])
-m_gk_normal = marginal(jp_gk, x -> x.p[1], Normal)
 
 
-bc_model_kp = Model(BinaryClassification, LogDensities.Smolyak{SparseQuadratureGrids.KronrodPatterson})
-jp_kp = fit(bc_model_kp, data)
-m_kp_grid = marginal(jp_kp, x -> x.p[1])
-m_kp_normal = marginal(jp_kp, x -> x.p[1], Normal)
 
 
-@testset begin
-  @testset begin
-#    println("μ:", m_gk_grid.μ)
-#    println("σ:", m_gk_grid.σ)
-#    println("Normal's quantiles:", quantile.(m_gk_normal, [.025,.25,.5,.75,.975]))
-#    println("Grid quantiles:", quantile.(m_gk_grid, [.025,.25,.5,.75,.975]))
-#    println("Grid points:", length(m_gk_grid.wv.weights))
-    @test isapprox(m_gk_grid.μ, 0.5503234949161578, rtol = 1e-8)
-    @test isapprox(m_gk_grid.σ, 0.0769016218269736, rtol = 1e-8)
-    @test isapprox(quantile(m_gk_normal, .025), 0.397151, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_normal, .25), 0.496162, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_normal, .5), 0.550512, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_normal, .75), 0.603866, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_normal, .975), 0.697043, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_grid, .025), 0.385444, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_grid, .25), 0.498564, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_grid, .5), 0.549953, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_grid, .75), 0.602149, rtol = 1e-4)
-    @test isapprox(quantile(m_gk_grid, .975), 0.703206, rtol = 1e-4)
-  end
-  @testset begin
-    @test isapprox(m_kp_grid.μ, 0.5504463054796331, rtol = 2e-8)
-    @test isapprox(m_kp_grid.σ, 0.07777781894846478, rtol = 2e-8)
-    @test isapprox(quantile(m_kp_normal, .025), 0.39106678659093086, rtol = 1e-8)
-    @test isapprox(quantile(m_kp_normal, .25), 0.49481672560058265, rtol = 1e-8)
-    @test isapprox(quantile(m_kp_normal, .5), 0.5488704022945908, rtol = 1e-8)
-    @test isapprox(quantile(m_kp_normal, .75), 0.6015558314490006, rtol = 1e-8)
-    @test isapprox(quantile(m_kp_normal, .975), 0.6960897346671988, rtol = 1e-8)
-    @test isapprox(quantile(m_kp_grid, .025), 0.3931513592679271, rtol = 1e-6)
-    @test isapprox(quantile(m_kp_grid, .25), 0.49486042524846835, rtol = 1e-6)
-    @test isapprox(quantile(m_kp_grid, .5), 0.549428799113842, rtol = 1e-6)
-    @test isapprox(quantile(m_kp_grid, .75), 0.6024636935286022, rtol = 1e-6)
-    @test isapprox(quantile(m_kp_grid, .975), 0.6960955354476359, rtol = 1e-6)
-  end
+function run_tests(model, data, μ, σ, quants, f, tol = 1e-2)
+    builds = (SparseQuadratureGrids.AdaptiveRaw, SparseQuadratureGrids.Adaptive, SparseQuadratureGrids.SmolyakRaw, SparseQuadratureGrids.Smolyak)
+    q_rules = (SparseQuadratureGrids.GenzKeister, SparseQuadratureGrids.KronrodPatterson)
+    @testset begin
+        @testset "Build: $b, Q rule: $q." for b ∈ builds, q ∈ q_rules
+            mod = Model(model, b{q})
+            jp = fit(mod, data)
+            m_grid = marginal(jp, f)
+            m_norm = marginal(jp, f, Normal)
+            @test isapprox(m_norm.μ, μ, rtol = tol)
+            @test isapprox(m_norm.σ, σ, rtol = tol)
+            @test isapprox(quantile(m_grid, .025), quants[1], rtol = tol)
+            @test isapprox(quantile(m_grid, .25), quants[2], rtol = tol)
+            @test isapprox(quantile(m_grid, .5), quants[3], rtol = tol)
+            @test isapprox(quantile(m_grid, .75), quants[4], rtol = tol)
+            @test isapprox(quantile(m_grid, .975), quants[5], rtol = tol)
+            @test isapprox(quantile(m_norm, .025), quants[1], rtol = tol)
+            @test isapprox(quantile(m_norm, .25), quants[2], rtol = tol)
+            @test isapprox(quantile(m_norm, .5), quants[3], rtol = tol)
+            @test isapprox(quantile(m_norm, .75), quants[4], rtol = tol)
+            @test isapprox(quantile(m_norm, .975), quants[5], rtol = tol)
+        end
+    end
 end
+
+quants = [0.391, 0.495, 0.55, 0.602, 0.696]
+run_tests(BinaryClassification, data, 0.5504, 0.077, quants, p -> p[1], 10^-1.5)

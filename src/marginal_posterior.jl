@@ -7,15 +7,31 @@ struct marginal{T <: InterpolateIntegral}
   itp::T
 end
 
-function weights_values(jp::JointPosterior{P}, f::Function) where {P}
-  weights_values(copy(jp.density), f.(jp.Θ))
+function SlidingVecFun( Θ::ModelParam, f::Function, M::Matrix )
+    g = function ()
+        update!(Θ)
+        f(Θ.Θ...)
+    end
+    svf = SlidingVecFun(g, Θ.v)
+    set!(svf, M)
+    svf
 end
-function weights_values(jp::JointPosteriorRaw{p, q, P}, f::Function) where {p, q, P}
-  values = similar(jp.grid.density) #You're likely to be interested in multiple marginals, hence no saving on allocations.
-  @inbounds for (i, n) ∈ enumerate( jp.grid.nodes )
-    values[i] = f(transform!(jp.Θ, n, jp.Θ_hat, jp.U, q))
+function weights_values(jp::JointPosterior{P}, f::Function) where {P}
+    values = similar(jp.density)
+    @inbounds for (i,j) in enumerate(jp.Θ)
+        values[i] = f(j.Θ...)
+    end
+    weights_values(copy(jp.density), values)
+end
+@inline weights_values(jp::JointPosteriorRaw, f::Function) = weights_values(jp.M.Θ, jp.grid.cache, copy(jp.grid.density), f::Function)
+@inline weights_values(Θ::ModelParam, cache::MatrixVecSVec, density::Vector, f::Function ) = weights_values(Θ, cache.M, density, f::Function)
+function weights_values(Θ::ModelParam, cache::Matrix, density::Vector, f::Function)
+  values = similar(density) #May add dict to model that will allow for saving these.
+  svf = SlidingVecFun(Θ, f, cache)
+  @inbounds for i ∈ eachindex(values)
+    values[i] = svf()
   end
-  weights_values(copy(jp.grid.density), values)
+  weights_values(density, values)
 end
 
 function marginal(jp::JointDist, f::Function, ::Type{T} = Grid) where {T}

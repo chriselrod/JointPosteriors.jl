@@ -1,18 +1,17 @@
-abstract type JointDist{P} end
-struct JointPosterior{P} <: JointDist{P}
-  Θ::Vector{P}
-  density::Vector{Float64}
-  Θ_hat::Vector{Float64}
-  U::Array{Float64,2}
+abstract type JointDist{𝛭} end
+struct JointPosterior{P, 𝛭} <: JointDist{𝛭}
+    M::𝛭
+    Θ::Vector{P}
+    density::Vector{Float64}
+    μ_hat::Vector{Float64}
+    U::Matrix{Float64}
 end
-struct JointPosteriorRaw{p, q, P} <: JointDist{P}
-  Θ::P
-  grid::FlatGrid{p, q}
-  Θ_hat::Vector{Float64}
-  U::Array{Float64,2}
+struct JointPosteriorRaw{G, 𝛭} <: JointDist{𝛭}
+    M::𝛭
+    grid::G
+    μ_hat::Vector{Float64}
+    U::Matrix{Float64}
 end
-
-
 function try_chol!(U::AbstractArray{<:Real,2}, Σ::AbstractArray{<:Real,2})
   @inbounds for i ∈ 1:size(U,1)
     U[i,i] = Σ[i,i]
@@ -144,89 +143,48 @@ function deduce_scale!(M::Model, H::Array{Float64,2}, ::Type{R}) where R
   reduce_dimensions!(M, H, R)
 end
 
-sigmoid_jacobian(x::AbstractArray{<:Real,1}) = -sum(log, 1 .- x .^ 2)
 
-function log_density!(::Type{GenzKeister}, x::AbstractArray{<:Real,1}, Θ::parameters, data, Θ_hat::Vector, U::AbstractArray{<:Real,2}, neg_min::Float64 = 0.0)
-  Θ.x .= Θ_hat .+ U * x
+@inline function log_density!(Θ::ModelParam, data, neg_min::Float64 = 0.0)
   update!(Θ)
-  log_density!(Θ, data) + neg_min
+  log_density(Θ, data) + neg_min
 end
-
-function log_density!(::Type{KronrodPatterson}, x::AbstractArray{<:Real,1}, Θ::parameters, data, Θ_hat::Vector, U::AbstractArray{<:Real,2}, neg_min::Float64 = 0.0)
-  l_jac = sigmoid_jacobian(x)
-  Θ.x .= Θ_hat .+ U * sigmoid.(x)
-  update!(Θ)
-  log_density!(Θ, data) + neg_min + l_jac
-end
-function log_density_cache!(::Type{GenzKeister}, x::AbstractArray{<:Real,1}, ::Type{P}, data, Θ_hat::Vector, U::AbstractArray{<:Real,2}, neg_min::Float64 = 0.0) where P
-  Θ = construct(P, Θ_hat .+ U * x)
-  update!(Θ)
-  log_density!(Θ, data) + neg_min, Θ
+@inline function log_density_cache(x::AbstractVector{<:Real}, θ::Tuple, data, neg_min::Float64 = 0.0)
+    param = construct(x, θ)
+    log_density(param, data) + neg_min, param
 end
 
-function log_density_cache!(::Type{KronrodPatterson}, x::AbstractArray{<:Real,1}, ::Type{P}, data, Θ_hat::Vector, U::AbstractArray{<:Real,2}, neg_min::Float64 = 0.0) where P
-  Θ = construct(P, Θ_hat .+ U * sigmoid.(x))
-  update!(Θ)
-  log_density!(Θ, data) + neg_min + sigmoid_jacobian(x), Θ
-end
-
-function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, U::AbstractArray{<:Real,2}, ::Type{KronrodPatterson})
-  Θ.x .= Θ_hat .+ ( U * sigmoid.(x) )
-  update!(Θ)
-  Θ
-end
-
-function transform!(Θ::parameters, x::AbstractArray{<:Real,1}, Θ_hat::Vector, U::AbstractArray{<:Real,2}, ::Type{GenzKeister})
-  Θ.x .= Θ_hat .+ ( U * x )
-  update!(Θ)
-  Θ
-end
 
 sample_size_order(::Any) = 1
 
+index(U::Array{Float64,2},::Type{<:DynamicRank}, data, n::Int) = size(U,2),sample_size_order(data), n
+index(U::Array{Float64,2},::Type{<:StaticRank}, data, n::Int) = sample_size_order(data), n
+index(U::Array{Float64,2},::Type{<:DynamicRank}, data, seq::Vector{Int}) = size(U,2), seq
+index(U::Array{Float64,2},::Type{<:StaticRank}, data, seq::Vector{Int}) = seq
 
-index_gen(U::Array{Float64,2},::Type{<:DynamicRank}, data, n::Int) = size(U,2),sample_size_order(data), n
-index_gen(U::Array{Float64,2},::Type{<:StaticRank}, data, n::Int) = sample_size_order(data), n
-index_gen(U::Array{Float64,2},::Type{<:DynamicRank}, data, seq::Vector{Int}) = size(U,2), seq
-index_gen(U::Array{Float64,2},::Type{<:StaticRank}, data, seq::Vector{Int}) = seq
-
-function mode(M::Model{G, PF, P, R} where {G, PF}, data) where {P, R}
-    nld(x::Vector) =  - log_density(x, P, data)
-    optimum = optimize(OnceDifferentiable(nld, M.Θ.x, autodiff = :forward), method = NewtonTrustRegion())#LBFGS; NewtonTrustRegion
-    Θ_hat = Optim.minimizer(optimum)
-    Θ_hat, deduce_scale!(M, 2hessian(nld, Θ_hat), R), Optim.minimum(optimum)
-end
-
-
-function fit( M::Model{G, PF, P, R}, data, n::Int = 1_000 ) where {q, B <: Adaptive, G <: GridVessel{q, B}, PF <: parameters, P <: parameters, R <: ModelRank}
-    Θ_hat, U, neg_min = mode( M, data )
-    snld(x::AbstractArray) = log_density_cache!(q, x, PF, data, Θ_hat, U, neg_min)
-    density, Θ = get!(M, index_gen(U, R, data, n), snld)
-    JointPosterior{P}(Θ, density, Θ_hat, U)
-end
-function fit( M::Model{G, PF, P, R}, data, seq::Vector{Int} = SparseQuadratureGrids.default(q) ) where {q, B <: aPrioriBuild, G <: GridVessel{q, B}, PF <: parameters, P <: parameters, R <: ModelRank}
-    Θ_hat, U, neg_min = mode( M, data )
-    snld(x::AbstractArray) = log_density_cache!(q, x, PF, data, Θ_hat, U, neg_min)
-    density, Θ = get!(M, index_gen(U, R, data, seq), snld)
-    JointPosterior{P}(Θ, density, Θ_hat, U)
-end
-function fit( M::Model{G, PF, P, R}, data, seq::Vector{Int} = SparseQuadratureGrids.default(q) ) where {q, B <: RawBuild, G <: GridVessel{q, B}, PF <: parameters, P <: parameters, R <: ModelRank}
-    Θ_hat, U, neg_min = mode( M, data )
-    snld(x::AbstractArray) = log_density!(q, x, M.Θ, data, Θ_hat, U, neg_min)
-    JointPosteriorRaw( M.Θ, return_grid!(M, index_gen(U, R, data, seq), snld), Θ_hat, U )
-end
-function fit( M::Model{G, PF, P, R}, data, n::Int = 1_000 ) where {q, B <: AdaptiveRaw, G <: GridVessel{q, B}, PF <: parameters, P <: parameters, R <: ModelRank}
-    Θ_hat, U, neg_min = mode( M, data )
-    snld( x::AbstractArray ) = log_density!( q, x, M.Θ, data, Θ_hat, U, neg_min)
-    JointPosteriorRaw( M.Θ, return_grid!(M, index_gen(U, R, data, n), snld), Θ_hat, U )
+function mode(M::Model{G, MP, P, R} where {G, MP, P}, data) where R
+    params = M.ϕ
+    nld = (x::Vector) ->  - log_density(x, params, data)
+    optimum = optimize(TwiceDifferentiable(nld, M.opt_cache, autodiff = :forward), method = NewtonTrustRegion())#LBFGS; NewtonTrustRegion
+    M.opt_cache .= Optim.minimizer(optimum)
+    M.opt_cache, deduce_scale!(M, 2ForwardDiff.hessian!(SparseQuadratureGrids.mats(M.Grid.mats), nld, M.opt_cache), R), Optim.minimum(optimum)
 end
 
-###These are the two functions called by the JointPosteriors package.
-###The first, return_grid!, is for the raw version, and it simply returns a flattened grid of the raw unconstrained values.
-###The second returns a vector of parameter objects. More costly, but should be cheaper to compute marginals on thanks to cacheing the transformations.
-function return_grid!( M::Model{G, PF, P, R} where {G <: GridVessel, PF <: parameters, P <: parameters, R <: ModelRank}, i, f::Function )
-  haskey(M.Grid.grids, i) ? eval_grid(M.Grid.grids[i], f) : calc_grid!(M.Grid, i, f)
+
+function SlidingVecFun( Θ::ModelParam, data, neg_min::Float64 )
+    ld = () -> log_density!( Θ, data, neg_min )
+    SlidingVecFun(ld, Θ.v)
 end
-function get!( M::Model{G, PF, P, R} where {G <: GridVessel, P <: parameters, R <: ModelRank}, i, f::Function ) where {PF <: parameters}
-  haskey(M.Grid.grids, i) ? eval_grid(M.Grid.grids[i], f, PF) : calc_grid!(M.Grid, i, f, PF)
+
+
+function fit( M::Model{G, MP, P, R} where P, data, n = default(B) ) where {q, B <: CacheBuild, G <: GridVessel{q, B}, MP, R}
+    μ_hat, U, neg_min = mode( M, data )
+    ldc(x::AbstractVector) = log_density_cache(x, M.ϕ, data, neg_min)
+    Θ, density = eval_grid!( M.Grid, ldc, μ_hat, U, index(U, R, data, n), MP )
+    JointPosterior( M, Θ, density, μ_hat, U )
+end
+function fit( M::Model{G, MP, P, R} where {MP, P}, data, n = default(B) ) where {q, B <: RawBuild, G <: GridVessel{q, B}, R}
+    μ_hat, U, neg_min = mode( M, data )
+    svf = SlidingVecFun( M.Θ, data, neg_min )
+    g = eval_grid!( M.Grid, svf, μ_hat, U, index(U, R, data, n) )
+    JointPosteriorRaw( M, g, μ_hat, U )
 end
