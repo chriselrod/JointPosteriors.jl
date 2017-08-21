@@ -164,7 +164,7 @@ index(U::Array{Float64,2},::Type{<:StaticRank}, data, seq::Vector{Int}) = seq
 function mode(M::Model{G, MP, P, R} where {G, MP, P}, data) where R
     params = M.ϕ
     nld = (x::Vector) ->  - log_density(x, params, data)
-    optimum = optimize(TwiceDifferentiable(nld, M.opt_cache, autodiff = :forward), method = NewtonTrustRegion())#LBFGS; NewtonTrustRegion
+    optimum::Optim.MultivariateOptimizationResults{Optim.NewtonTrustRegion{Float64},Float64,1,Optim.NewtonTrustRegion{Float64}} = optimize(TwiceDifferentiable(nld, M.opt_cache, autodiff = :forward), method = NewtonTrustRegion())#LBFGS; NewtonTrustRegion
     M.opt_cache .= Optim.minimizer(optimum)
     M.opt_cache, deduce_scale!(M, 2ForwardDiff.hessian!(SparseQuadratureGrids.mats(M.Grid.mats), nld, M.opt_cache), R), Optim.minimum(optimum)
 end

@@ -4,6 +4,22 @@ struct weights_values <: AbstractArray{Float64,1}
   weights::Vector{Float64}
   values::Vector{Float64}
 end
+struct polynomial_interpolation{d <: ContinuousUnivariateDistribution}
+  X::Array{Float64, 2}
+  y::Vector{Float64}
+  n::Int
+  diag::Vector{Float64}
+  off_diag::Vector{Float64}
+end
+struct Grid <: InterpolateIntegral
+  weights::Array{Float64,1}
+  values::Array{Float64,1}
+end
+struct GLM{T <: ContinuousUnivariateDistribution} <: InterpolateIntegral
+  β::Vector{Float64}
+  d::T
+end
+
 
 function simultaneous_sort!(wv::weights_values)
   si = sortperm(wv.values)
@@ -18,13 +34,6 @@ function interpolate_weight_values(wv::weights_values)
 end
 
 
-struct polynomial_interpolation{d <: ContinuousUnivariateDistribution}
-  X::Array{Float64, 2}
-  y::Vector{Float64}
-  n::Int
-  diag::Vector{Float64}
-  off_diag::Vector{Float64}
-end
 
 
 OneParamReal = Union{TDist, VonMises}
@@ -159,10 +168,7 @@ function predict_cdf(Θ::Vector{<:Real}, poly::polynomial_interpolation{Beta})
 end
 
 
-struct GLM{T <: ContinuousUnivariateDistribution} <: InterpolateIntegral
-  β::Vector{Float64}
-  d::T
-end
+
 function GLM(Θ::Vector{<:Real}, ::Type{T}) where {T <: OneParamReal}
   GLM(construct_β(Θ), T(exp(Θ[5])))
 end
@@ -185,7 +191,7 @@ end
 function GLM(itp::Interpolations.GriddedInterpolation, ::Type{d}) where {d <: ContinuousUnivariateDistribution}
   poly = polynomial_interpolation(itp, d)
   cdf_err(x::Vector) = cdf_error(x, poly)
-  Θ_hat = Optim.minimizer(optimize(OnceDifferentiable(cdf_err, zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
+  Θ_hat::Vector{Float64} = Optim.minimizer(optimize(TwiceDifferentiable(cdf_err, zeros(length(poly)), autodiff = :forward), method = NewtonTrustRegion()))#LBFGS
   GLM(Θ_hat, d)
 end
 
@@ -204,7 +210,8 @@ function GLM(wv::weights_values)
   end
 end
 function poly(β::Vector, x::Real)
-  @inbounds β[1] + β[2]*x + β[3]*x^2 + β[4]*x^3
+  @inbounds out = β[1] + β[2]*x + β[3]*x^2 + β[4]*x^3
+  out
 end
 function Distributions.cdf(itp::GLM{T}, x::Real) where {T <: RealDist}
   Distributions.cdf(itp.d, poly(itp.β, x))
@@ -214,6 +221,227 @@ function Distributions.cdf(itp::GLM{T}, x::Real) where {T <: PositiveDist}
 end
 function Distributions.cdf(itp::GLM{Beta}, x::Real)
   Distributions.cdf(itp.d, LogDensities.logistic(poly(itp.β, LogDensities.logit(x))))
+end
+
+function calculate_common!(x, m, d)
+    if x != m.ϕ
+        copy!(m.ϕ, x)
+        update_θ!(m)
+        update_αβ!(m)
+        At_mul_B!(m.Vβ, m.V, m.β)
+#        VFβ .= cdf.(d, m.Vβ)
+#        δ .= VFβ .- w
+        m.δ .= cdf.(d, m.Vβ) .- m.w
+        ToeplitzSymTriQuadForm!(m)
+
+    end
+end
+
+function mul_tstd_x!(z, ρ, x)
+
+    lag, current, next = 0.0, x[1], x[2]
+    z[1] = current - ρ * next
+    @inbounds for i ∈ 3:length(x)
+        lag, current, next = current, next, x[i]
+        z[i-1] = current - ρ * (lag + next)
+    end
+    z[end] = next - ρ * current
+
+end
+
+function score!(stor, x, m, d)
+    calculate_common!(x, m, d)
+
+    ρ = m.Λ[2]
+
+    Vfβ.diag .= pdf.(d, m.Vβ)
+    mul_tstd_x!(m.nbuff1, ρ, m.δ)
+    A_mul_B!(m.nbuff2, m.Vfβ, m.buff1)
+    A_mul_B!(m.∇β, m.V, m.buff2)
+    m.∇β .*= 2/m.Λ[1]
+    A_mul_B!(m.∇α, m.α, m.m.∇β)
+
+    epsilon = eps()
+
+    stor[8] = m.Q[2] + m.n
+    stor[9] = m.Q[3] - imag(log_det_tstd(ρ+im*epsilon, m.n)) / epsilon
+end
+
+function ToeplitzSymTriQuadForm(δ::Vector{T}, ρ::T, σ²::T) where T
+    δ²_sum = zero(T)
+    δcross_sum = zero(T)
+    δ_lag = zero(T)
+    @simd for δᵢ ∈ δ
+        δ²_sum += δᵢ^2
+        δcross_sum += δᵢ * δ_lag
+        δ_lag = δᵢ
+    end
+    (δ²_sum - 2ρ*δcross_sum) / 2σ²
+end
+function ToeplitzSymTriQuadForm!(m::MarginalBuffer)
+    δ²_sum = 0.0
+    δcross_sum = 0.0
+    δ_lag = 0.0
+    @simd for δᵢ ∈ m.δ
+        δ²_sum += δᵢ^2
+        δcross_sum += δᵢ * δ_lag
+        δ_lag = δᵢ
+    end
+    σ² = m.Λ[1]
+    out = (δ²_sum - 2m.Λ[2]*δcross_sum) / σ²
+    m.Q[1] = out
+    m.Q[2] = - out / σ² #derivative with respect to σ²
+    m.Q[3] = - 2δcross_sum / σ² #derivative with respect to ρ
+    out
+end
+
+
+function l_likelihood(x, m, d)
+    calculate_common!(x, m, d)
+
+    m.Q[1] - log_det_tstd(m.Λ[2]) + n*m.ϕ[8]
+end
+
+function log_det_tstd(ρ::T, n::Int) where T
+    lag1 = out = one(T)
+    lag2 = zero(T)
+    ρ² = ρ^2
+    for i ∈ 1:n
+        out -= ρ² * lag2
+        lag2, lag1 = lag1, out
+    end
+    log(out)
+end
+
+
+
+function update_αβ!(m::MarginalBuffer)
+    a = m.β[10]
+    c = m.θ[1]
+    b = m.θ[2]
+    m = m.θ[3]
+    l = m.θ[4]
+    d = m.ϕ[4]
+    n = m.ϕ[7]
+    l² = l^2
+    l³ = l*l²
+    m² = m^2
+    m³ = m*m²
+    n² = n^2
+    n³ = n*n²
+    m.β[1] = a*n³ + b*n^2 + c*n + d
+    m.β[2] = 3a*m*n² + 2b*m*n + c*m
+    m.β[3] = 3a*l*n² + 3a*m²*n + 2b*l*n + b*m² + c*l + c
+    m.β[4] = 6a*l*m*n + a*m³ + 3a*n² + 2b*l*m + 2b*n
+    m.β[5] = 3a*l²*n + 3a*l*m² + 6a*m*n + b*l² + 2b*m
+    m.β[6] = 3a*l²*m + 6a*l*n + 3a*m² + 2b*l
+    m.β[7] = a*l³ + 6a*l*m + 3a*n + b
+    m.β[8] = 3a*l² + 3a*m
+    m.β[9] = 3a*l
+
+    α[1] = n³
+    α[2] = n²
+    α[3] = n
+    α[4] = 1
+    α[7] = 3n²*a + 2n*b + c
+
+    α[8] = 3m*n²
+    α[9] = 2m*n
+    α[10] = m
+    α[13] = 3a*n² + 2b*n + c
+    α[14] = 6a*m +2b*m
+
+    α[15] = 3l*n² + 3m²*n
+    α[16] = 2l*n + m²
+    α[17] = l + 1
+    α[19] = 3a*n² + 2b*n + c
+    α[20] = 6a*m*n + 2b*m
+    α[21] = 6a*l*n + 3a*m² + 2b*l
+
+    α[22] = 6l*m*n + m³ + 3n²
+    α[23] = 2l*m + 2n
+    α[26] = 6a*m*n + 2b*m
+    α[27] = 6a*l*n + 3a*m² + 2b*l
+    α[28] = 6a*l*m + 6a*n + 2b
+
+    α[29] = 3l²*n + 3l*m² + 6m*n
+    α[30] = l² + 2m
+    α[33] = 6a*l*n + 3a*m² + 2b*l
+    α[34] = 6*a*l*m + 6a*n + 2b
+    α[35] = 3a*l² + 6a*m
+
+    α[36] = 3l²*m + 6l*n + 3m²
+    α[37] = 2l
+    α[40] = 6a*l*m + 6a*n + 2b
+    α[41] = 3a*l² + 6a*m
+    α[42] = 6a*l
+
+    α[43] = l³ + 6a*m + 3n
+    α[44] = 1
+    α[47] = 3a*l² + 6a*m
+    α[48] = 6a*l
+    α[49] = 3n
+
+    α[50] = 3l² + 3m
+    α[54] = 6a*l
+    α[55] = 3a
+
+    α[57] = 3l
+    α[61] = 3a
+
+
+end
+
+
+function update_θ!(m::MarginalBuffer)
+    eϕ₁ = exp(m.ϕ[1])
+    eϕ₂ = exp(m.ϕ[2])
+    m.β[10] = eϕ₁
+    m.θ[1] = eϕ₂
+    eϕ₃ = exp(m.ϕ[3])
+    b1 = √(3eϕ₁*eϕ₂)
+    m.θ[2] = b1*(eϕ₃ - 1)/(eϕ₃ + 1)
+    eϕ₅ = exp(m.ϕ[5])
+    eϕ₆ = exp(m.ϕ[6])
+    m.θ[3] = eϕ₅
+    b2 = √(3eϕ₅)
+    m.θ[4] = b2*(eϕ₆ - 1)/(eϕ₆ + 1)
+    m.θ[5] = b1
+    m.θ[6] = b2
+    m.Λ[1] = exp(m.ϕ[8])
+    eϕ₉ = exp(m.ϕ[9])
+    m.Λ[2] = 0.5eϕ₉/(1+eϕ₉)
+end
+function log_jacobian(m::MarginalBuffer)
+    m.ϕ[1] + m.ϕ[2] + m.ϕ[5] + ljb(m.θ[5], m.θ[2]) + ljb(m.θ[6], m.θ[4]) + m.ϕ[8] + log(m.Λ[2] - 2m.Λ[2]^2)
+end
+function ljb(bound, val)
+    log((bound - val^2/bound)/2)
+end
+
+
+function GLM(m::MarginalBuffer, d::ContinuousUnivariateDistribution)
+
+end
+
+
+function one_cubic_root(a::Real, c::Real, b::Real, d::Real)
+    Δₒ = b^2 - 3a*c
+    Δ₁ = 2b^3 - 9a*b*c + 27a^2*d
+    Δ₂ = Δ₁^2 - 4Δ₀^3
+    C = cbrt( (Δ₁ + sqrt(Δ₁^2 - 4Δ₀^3)) / 2 )
+    -(b + C + Δ₀ / C) / 3a
+end
+function one_cubic_root(c::Real, b::Real, d::Real)
+    Δₒ = b^2 - 3c
+    Δ₁ = 2b^3 - 9b*c + 27d
+    Δ₂ = Δ₁^2 - 4Δ₀^3
+    C = cbrt( (Δ₁ + sqrt(Δ₁^2 - 4Δ₀^3)) / 2 )
+    -(b + C + Δ₀ / C) / 3
+end
+function find_root(β::Vector{Float64}, δ::Float64)
+    r1 = one_cubic_root(β[1], β[2], β[3], β[4] - δ)
+    one_cubic_root(β[5], β[6], β[7] - r1)
 end
 
 function find_root(β::Vector{Float64}, δ::Float64)
@@ -284,10 +512,7 @@ function Base.quantile(itp::GLM{Beta}, x::Real)
   logistic(find_root(itp.β, LogDensities.logit(Base.quantile(itp.d, x))))
 end
 
-struct Grid <: InterpolateIntegral
-  weights::Array{Float64,1}
-  values::Array{Float64,1}
-end
+
 function Grid(wv::weights_values)
   itp = interpolate_weight_values(wv)
   value_nodes = [linspace(itp.knots[1][1], itp.knots[1][end], 100)...]
