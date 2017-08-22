@@ -226,7 +226,6 @@ end
 function calculate_common!(x, m, d)
     if x != m.ϕ
         copy!(m.ϕ, x)
-        update_θ!(m)
         update_αβ!(m)
         At_mul_B!(m.Vβ, m.V, m.β)
 #        VFβ .= cdf.(d, m.Vβ)
@@ -236,7 +235,10 @@ function calculate_common!(x, m, d)
 
     end
 end
-
+function l_likelihood(x, m, d)
+    calculate_common!(x, m, d)
+    m.Q[1] - log_det_tstd(m.Λ[2]) + n*m.ϕ[8]
+end
 function mul_tstd_x!(z, ρ, x)
 
     lag, current, next = 0.0, x[1], x[2]
@@ -249,7 +251,17 @@ function mul_tstd_x!(z, ρ, x)
 
 end
 
-function score!(stor, x, m, d)
+x = randn(10); μ = 0.1 .* randn(10);
+function fst(x, μ)
+  δ = ( 1 .+ erf.( x ./ √2 ) ) ./ 2 .- μ
+  ToeplitzSymTriQuadForm(δ, 0.25, 1.0)
+end
+
+
+δ = ( 1 .+ erf.( x ./ √2 ) ) ./ 2 .- μ
+
+
+function nscore!(stor, x, m, d)
     calculate_common!(x, m, d)
 
     ρ = m.Λ[2]
@@ -262,12 +274,15 @@ function score!(stor, x, m, d)
     A_mul_B!(m.∇α, m.α, m.m.∇β)
 
     epsilon = eps()
-
+    for i, grad ∈ enumerate(m.∇α)
+      stor[i] = grad
+    end
     stor[8] = m.Q[2] + m.n
     stor[9] = m.Q[3] - imag(log_det_tstd(ρ+im*epsilon, m.n)) / epsilon
+    nlj_grad!(score::AbstractVector, m::MarginalBuffer)
 end
 
-function ToeplitzSymTriQuadForm(δ::Vector{T}, ρ::T, σ²::T) where T
+function ToeplitzSymTriQuadForm(δ::Vector{T}, ρ::Number, σ²::Number) where T
     δ²_sum = zero(T)
     δcross_sum = zero(T)
     δ_lag = zero(T)
@@ -298,7 +313,6 @@ end
 
 function l_likelihood(x, m, d)
     calculate_common!(x, m, d)
-
     m.Q[1] - log_det_tstd(m.Λ[2]) + n*m.ϕ[8]
 end
 
@@ -315,12 +329,18 @@ end
 
 
 
+
 function update_αβ!(m::MarginalBuffer)
-    a = m.β[10]
-    c = m.θ[1]
-    b = m.θ[2]
-    m = m.θ[3]
-    l = m.θ[4]
+    a = exp(m.ϕ[1])
+    c = exp(m.ϕ[2])
+    eϕ₃ = exp(m.ϕ[3])
+    b = √(3a*c)*(eϕ₃ - 1)/(eϕ₃ + 1)
+    m = exp(m.ϕ[5])
+    eϕ₆ = exp(m.ϕ[6])
+    l = √(3m)*(eϕ₆ - 1)/(eϕ₆ + 1)
+    m.Λ[1] = exp(m.ϕ[8])
+    eϕ₉ = exp(m.ϕ[9])
+    m.Λ[2] = 0.5eϕ₉/(1+eϕ₉)
     d = m.ϕ[4]
     n = m.ϕ[7]
     l² = l^2
@@ -329,96 +349,100 @@ function update_αβ!(m::MarginalBuffer)
     m³ = m*m²
     n² = n^2
     n³ = n*n²
-    m.β[1] = a*n³ + b*n^2 + c*n + d
-    m.β[2] = 3a*m*n² + 2b*m*n + c*m
-    m.β[3] = 3a*l*n² + 3a*m²*n + 2b*l*n + b*m² + c*l + c
-    m.β[4] = 6a*l*m*n + a*m³ + 3a*n² + 2b*l*m + 2b*n
-    m.β[5] = 3a*l²*n + 3a*l*m² + 6a*m*n + b*l² + 2b*m
-    m.β[6] = 3a*l²*m + 6a*l*n + 3a*m² + 2b*l
-    m.β[7] = a*l³ + 6a*l*m + 3a*n + b
+    bmn = b*m*n; aln² = a*l*n²; amn = a*m*n; bln = b*l*n; alm = a*l*m; blm = b*l*m
+    al²m = alm*l
+    alm² = a*l*m²; aln = a*l*n
+    m.β[1] = a*n³ + b*n² + c*n + d
+    m.β[2] = 3amn*n + 2b*m*n + c*m
+    m.β[3] = 3aln² + 3amn*m + 2bln + b*m² + c*l + c
+    m.β[4] = 6alm*n + a*m³ + 3a*n² + 2blm + 2b*n
+    m.β[5] = 3aln*l + 3alm*m + 6amn + b*l² + 2b*m
+    m.β[6] = 3alm*l + 6aln + 3a*m² + 2b*l
+    m.β[7] = a*l³ + 6alm + 3a*n + b
     m.β[8] = 3a*l² + 3a*m
     m.β[9] = 3a*l
-
-    α[1] = n³
-    α[2] = n²
-    α[3] = n
-    α[4] = 1
-    α[7] = 3n²*a + 2n*b + c
-
-    α[8] = 3m*n²
-    α[9] = 2m*n
-    α[10] = m
-    α[13] = 3a*n² + 2b*n + c
-    α[14] = 6a*m +2b*m
-
-    α[15] = 3l*n² + 3m²*n
-    α[16] = 2l*n + m²
-    α[17] = l + 1
-    α[19] = 3a*n² + 2b*n + c
-    α[20] = 6a*m*n + 2b*m
-    α[21] = 6a*l*n + 3a*m² + 2b*l
-
-    α[22] = 6l*m*n + m³ + 3n²
-    α[23] = 2l*m + 2n
-    α[26] = 6a*m*n + 2b*m
-    α[27] = 6a*l*n + 3a*m² + 2b*l
-    α[28] = 6a*l*m + 6a*n + 2b
-
-    α[29] = 3l²*n + 3l*m² + 6m*n
-    α[30] = l² + 2m
-    α[33] = 6a*l*n + 3a*m² + 2b*l
-    α[34] = 6*a*l*m + 6a*n + 2b
-    α[35] = 3a*l² + 6a*m
-
-    α[36] = 3l²*m + 6l*n + 3m²
-    α[37] = 2l
-    α[40] = 6a*l*m + 6a*n + 2b
-    α[41] = 3a*l² + 6a*m
-    α[42] = 6a*l
-
-    α[43] = l³ + 6a*m + 3n
-    α[44] = 1
-    α[47] = 3a*l² + 6a*m
-    α[48] = 6a*l
-    α[49] = 3n
-
-    α[50] = 3l² + 3m
-    α[54] = 6a*l
-    α[55] = 3a
-
-    α[57] = 3l
-    α[61] = 3a
-
-
+    m.β[10] = a
+    bt = √(12a*c)*eϕ₃/(eϕ₃+1)^2
+    lt = √(12m)*eϕ₆/(eϕ₆+1)^2
+    m.α[1] = a*n³ + b*n²/2
+    m.α[2] = b*n²/2 + n*c
+    m.α[3] = n²*bt
+    m.α[4] = 1
+    m.α[7] = 3n²*a + 2n*b + c
+    m.α[8] = 3amn*n + bmn
+    m.α[9] = bmn + c*m
+    m.α[10] = 2m*n*bt
+    m.α[12] = 3amn*n + 2bmn + c*m
+    m.α[14] = 6amn +2b*m
+    m.α[15] = 3aln² + 3amn*m + bln + b*m²/2
+    m.α[16] = bln + b*m²/2 + c*l + c
+    m.α[17] = (2l*n + m²)*bt
+    m.α[19] = 3aln²/2 + bln + c*l/2 + m*(6amn + 2b*m)
+    m.α[20] = lt*(3a*n² + 2b*n + c)
+    m.α[21] = 6a*l*n + 3a*m² + 2b*l
+    m.α[22] = 6l*amn + a*m³ + 3a*n² + blm + b*n
+    m.α[23] = blm + b*n
+    m.α[24] = (2l*m + 2n)*bt
+    m.α[26] = 9l*amn + 3a*m³ + 3blm
+    m.α[27] = lt*(6a*m*n + 2b*m)
+    m.α[28] = 6a*l*m + 6a*n + 2b
+    m.α[29] = 3aln*l + 3alm² + 6amn + b*l²/2 + b*m
+    m.α[30] = b*l²/2 + b*m
+    m.α[31] = (l² + 2m)*bt
+    m.α[33] = 3aln*l + 3alm²/2 + b*l² + 6alm² + 6amn + 2b*m
+    m.α[34] = lt*(6aln + 3a*m² + 2b*l)
+    m.α[35] = 3a*l² + 6a*m
+    m.α[36] = 3alm*l + 6aln + 3a*m² + b*l
+    m.α[37] = b*l
+    m.α[38] = 2l*bt
+    m.α[40] = 6alm*l + 3aln + b*l + 6a*m²
+    m.α[41] = (6alm + 6a*n + 2b)*lt
+    m.α[42] = 6a*l
+    m.α[43] = a*l³ + 6alm + 3a*n + b/2
+    m.α[44] = b/2
+    m.α[45] = bt
+    m.α[47] = l/2*(3a*l² + 6a*m) + m*6a*l
+    m.α[48] = lt*(3a*l² + 6a*m)
+    m.α[49] = 3a
+    m.α[50] = a*(3l² + 3m)
+    m.α[54] = 3a*l² + 3a*m
+    m.α[55] = 6a*l*lt
+    m.α[57] = 3a*l
+    m.α[61] = 3a*l/2
+    m.α[62] = lt*3a
+    m.α[64] = a
 end
 
 
-function update_θ!(m::MarginalBuffer)
-    eϕ₁ = exp(m.ϕ[1])
-    eϕ₂ = exp(m.ϕ[2])
-    m.β[10] = eϕ₁
-    m.θ[1] = eϕ₂
-    eϕ₃ = exp(m.ϕ[3])
-    b1 = √(3eϕ₁*eϕ₂)
-    m.θ[2] = b1*(eϕ₃ - 1)/(eϕ₃ + 1)
-    eϕ₅ = exp(m.ϕ[5])
-    eϕ₆ = exp(m.ϕ[6])
-    m.θ[3] = eϕ₅
-    b2 = √(3eϕ₅)
-    m.θ[4] = b2*(eϕ₆ - 1)/(eϕ₆ + 1)
-    m.θ[5] = b1
-    m.θ[6] = b2
-    m.Λ[1] = exp(m.ϕ[8])
-    eϕ₉ = exp(m.ϕ[9])
-    m.Λ[2] = 0.5eϕ₉/(1+eϕ₉)
-end
 function log_jacobian(m::MarginalBuffer)
-    m.ϕ[1] + m.ϕ[2] + m.ϕ[5] + ljb(m.θ[5], m.θ[2]) + ljb(m.θ[6], m.θ[4]) + m.ϕ[8] + log(m.Λ[2] - 2m.Λ[2]^2)
+  3(m.ϕ[1]+m.ϕ[2]+m.ϕ[5])/2 - nlogit_lj(m.ϕ[3]) - nlogit_lj(m.ϕ[6]) + m.ϕ[8]-nlogit_lj(m.ϕ[9])
 end
-function ljb(bound, val)
-    log((bound - val^2/bound)/2)
+function nlj_grad!(score::AbstractVector, m::MarginalBuffer)
+  score[1] -= 1.5
+  score[2] -= 1.5
+  score[3] -= dnlogit_lj(m.ϕ[3])
+  score[5] -= 1.5
+  score[6] -= dnlogit_lj(m.ϕ[6])
+  score[8] -= 1.0
+  score[9] -= dnlogit_lj(m.ϕ[9])
 end
-
+function nlogit_lj(l, u, x)
+  eˣ = exp(x)
+  log(2 + eˣ + 1/eˣ) - log(u - l)
+end
+function nlogit_lj(b, x)
+  eˣ = exp(x)
+  log(2 + eˣ + 1/eˣ) - log(b)
+end
+function nlogit_lj(x)
+  eˣ = exp(x)
+  log(2 + eˣ + 1/eˣ)
+end
+function dnlogit_lj(x)
+  eˣ = exp(x)
+  e²ˣ = eˣ^2
+  (1 - e²ˣ) / (2eˣ + e²ˣ + 1)
+end
 
 function GLM(m::MarginalBuffer, d::ContinuousUnivariateDistribution)
 
