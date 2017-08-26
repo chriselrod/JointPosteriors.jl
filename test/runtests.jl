@@ -2,7 +2,7 @@ using JointPosteriors
 using Base.Test
 
 
-BinaryClassification = ( ProbabilityVector(3), )
+model = ( ProbabilityVector(3), )
 
 struct BinaryClassificationData
   X::Array{Int64,1}
@@ -35,7 +35,6 @@ data = BinaryClassificationData(X, freq, 9, βm = 2, βp = 2);
 
 
 
-
 function run_tests(model, data, μ, σ, quants, f, tol = 1e-2)
     builds = (SparseQuadratureGrids.AdaptiveRaw, SparseQuadratureGrids.Adaptive, SparseQuadratureGrids.SmolyakRaw, SparseQuadratureGrids.Smolyak)
     q_rules = (SparseQuadratureGrids.GenzKeister, SparseQuadratureGrids.KronrodPatterson)
@@ -52,6 +51,9 @@ function run_tests(model, data, μ, σ, quants, f, tol = 1e-2)
             @test isapprox(quantile(m_grid, .5), quants[3], rtol = tol)
             @test isapprox(quantile(m_grid, .75), quants[4], rtol = tol)
             @test isapprox(quantile(m_grid, .975), quants[5], rtol = tol)
+            println("\n")
+            println(quantile.(m_norm, [.025,.25,.5,.75,.975]))
+            println("\n")
             @test isapprox(quantile(m_norm, .025), quants[1], rtol = tol)
             @test isapprox(quantile(m_norm, .25), quants[2], rtol = tol)
             @test isapprox(quantile(m_norm, .5), quants[3], rtol = tol)
@@ -62,4 +64,4 @@ function run_tests(model, data, μ, σ, quants, f, tol = 1e-2)
 end
 
 quants = [0.391, 0.495, 0.55, 0.602, 0.696]
-run_tests(BinaryClassification, data, 0.5504, 0.077, quants, p -> p[1], 10^-1.5)
+run_tests(model, data, 0.5504, 0.077, quants, p -> p[1], 10^-1.5)

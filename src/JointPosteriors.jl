@@ -1,5 +1,6 @@
 module JointPosteriors
 
+using   LineSearches: BackTracking
 using   Optim
 using   ForwardDiff
 using   SparseQuadratureGrids
@@ -39,7 +40,10 @@ export  JointPosterior,
         Normal,
         Adaptive,
         AdaptiveRaw,
-        Smolyak
+        Smolyak,
+        pdf,
+        cdf,
+        quantile
 
 
 
