@@ -49,19 +49,18 @@ function Vandermonde!(m::MarginalBuffer, density::Vector{T}, μ::Number, σ::Num
         dᵢ = density[j]
         cumulative_w += dᵢ
         m.w[i] = cumulative_w
-        vᵢ⁹ = (m.v[j] - μ)/σ
-        vᵢ³ = cbrt(vᵢ⁹)
-        vᵢ = cbrt(vᵢ³)
+        vᵢ = (m.v[j] - μ)/σ
         vᵢ² = vᵢ^2
+        vᵢ4 = vᵢ²^2
         m.V[k] = vᵢ
         m.V[k+1] = vᵢ²
-        m.V[k+2] = vᵢ³
-        m.V[k+3] = vᵢ²^2
-        m.V[k+4] = vᵢ³*vᵢ²
-        m.V[k+5] = vᵢ³^2
-        m.V[k+6] = vᵢ³^2*vᵢ
-        m.V[k+7] = vᵢ³^2*vᵢ²
-        m.V[k+8] = vᵢ⁹
+        m.V[k+2] = vᵢ*vᵢ²
+        m.V[k+3] = vᵢ4
+        m.V[k+4] = vᵢ4*vᵢ
+        m.V[k+5] = vᵢ4*vᵢ²
+        m.V[k+6] = vᵢ4*vᵢ²*vᵢ
+        m.V[k+7] = vᵢ4^2
+        m.V[k+8] = vᵢ4^2*vᵢ
         k += 10
     end
     m, μ, σ

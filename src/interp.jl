@@ -360,15 +360,14 @@ end
 
 
 function Distributions.cdf(itp::NestedPolyGLM{Distributions.Normal{Float64}}, x::Real)
-  unconstrained_cdf(itp.d, polyexpreval(itp.β, cbrt(cbrt((x-itp.d.μ)/itp.d.σ))))
+  unconstrained_cdf( itp.d, polyexpreval( itp.β, (x-itp.d.μ)/itp.d.σ ) )
 end
 function Base.quantile(itp::NestedPolyGLM{Distributions.Normal{Float64}}, x::Real)
-  nested_root(itp.θ, √(2)*erfinv(2x-1))^9*itp.d.σ + itp.d.μ
+  nested_root( itp.θ, √(2)*erfinv(2x-1) )*itp.d.σ + itp.d.μ
 end
 function Distributions.pdf(itp::NestedPolyGLM{Distributions.Normal{Float64}}, x::Real)
-  x¹₉ = cbrt(cbrt((x-itp.d.μ)/itp.d.σ))
-  fₓ, ∂fₓ = ∂polyexpreval(itp.β, x¹₉)
-  unconstrained_pdf(itp.d, fₓ) * ∂fₓ / (9x¹₉^8 * itp.d.σ)
+  fₓ, ∂fₓ = ∂polyexpreval(itp.β, (x-itp.d.μ)/itp.d.σ )
+  unconstrained_pdf(itp.d, fₓ) * ∂fₓ / itp.d.σ
 end
 
 function NestedPolyGLM(m::LogDensities.MarginalBuffer, d::ContinuousUnivariateDistribution)
