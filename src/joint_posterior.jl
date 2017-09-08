@@ -162,7 +162,7 @@ index(U::Array{Float64,2},::Type{<:DynamicRank}, data, seq::Vector{Int}) = size(
 index(U::Array{Float64,2},::Type{<:StaticRank}, data, seq::Vector{Int}) = seq
 
 function mode(M::Model{G, MP, P, R} where {G, MP, P}, data, f::Function = Main.log_density) where R
-	optimize!(ModelDiff(M.diff_buffer, f, data))
+	optimize!(ModelDiff(f, M.diff_buffer, data))
 	M.diff_buffer.state.x, deduce_scale!(M, 2M.diff_buffer.dr.derivs[2], R), M.diff_buffer.dr.value
 end
 

@@ -1,5 +1,5 @@
-using JointPosteriors
 using Base.Test
+using JointPosteriors
 
 
 model = ( ProbabilityVector(3), )
@@ -33,7 +33,9 @@ freq = [10, 2, 2, 1, 2, 3, 2, 16];
 data = BinaryClassificationData(X, freq, 9, βm = 2, βp = 2);
 
 
-
+#mod = Model(model)
+#md = LogDensities.ModelDiff(log_density, mod.diff_buffer, data);
+#jp = fit(mod, data)
 
 function run_tests(model, data, μ, σ, quants, f, tol = 1e-2)
     builds = (SparseQuadratureGrids.AdaptiveRaw, SparseQuadratureGrids.Adaptive, SparseQuadratureGrids.SmolyakRaw, SparseQuadratureGrids.Smolyak)
@@ -41,6 +43,7 @@ function run_tests(model, data, μ, σ, quants, f, tol = 1e-2)
     @testset begin
         @testset "Build: $b, Q rule: $q." for b ∈ builds, q ∈ q_rules
             mod = Model(model, b{q})
+            fit(mod, data)
             jp = fit(mod, data)
             m_grid = marginal(jp, f)
             m_norm = marginal(jp, f, Normal)
